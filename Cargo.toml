@@ -25,6 +25,8 @@ tokio={version="1", features=["macros","rt-multi-thread"]}
 # 이 피터는 기본으로 활성화되어 있지 않다. 프로젝트에 불필요한 디펜던시를 사용하지 않도록 하기 위해서이다.
 serde = {version = "1", features = ["derive"]}
 config = "0.13"
+uuid = {version = "1", features = ["v4"]}
+chrono = {version = "0.4.22", default-features = false, features = ["clock"]}
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 [dependencies.sqlx]
