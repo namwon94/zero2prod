@@ -1,0 +1,32 @@
+#####20250117_다듬기전(p46)#####
+use zero2prod::run;
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    // 주소 바인딩에 실패하면 io::Error를 발생시킨다
+    // 그렇지 않으면 Server에 대해 .await를 호출한다.
+    run()?.await
+}
+
+#####20250117_포트를 하드코딩하지 않기 위한 작업 전#####
+use zero2prod::run;
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    // 주소 바인딩에 실패하면 io::Error를 발생시킨다
+    // 그렇지 않으면 Server에 대해 .await를 호출한다.
+    run("127.0.0.1:8080")?.await
+}
+
+###작업 후(TcpListener를 import 해야됨 -> 내 생각)#####
+use zero2prod::run;
+use std::net::TcpListener;
+
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    // 주소 바인딩에 실패하면 io::Error를 발생시킨다
+    // 그렇지 않으면 Server에 대해 .await를 호출한다.
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    run(listener)?.await
+}

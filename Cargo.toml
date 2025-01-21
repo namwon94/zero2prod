@@ -1,0 +1,40 @@
+[package]
+name = "zero2prod"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# 어떤 형태의 결로든 기술할 수 있지만, 커뮤니티의 관습을 따른다
+# 'name'필트를 사용해서 라이브러리 이름을 지정한다. 지정하지 않으면, cargo는 'package.name'을 사용한다. 우리가 원하는 바이다.
+path = "src/lib.rs"
+
+# 이중 대괄호를 사용한 것에 주의하자. TOML에서의 배열 표기 문법이다.
+# 프로젝트에 하나의 라이브러리는 물론, 여러 바이너리를 포함할 수도  있다.
+# 동일한 저장소에서 여러 라이브러리를 관리하고자 한다면, workspace 피처를 살펴보기 바란다.(추후에 다룸)
+[[bin]]
+path = "src/main.rs"
+name = "zero2prod"
+
+[dev-dependencies]
+reqwest = "0.11"
+
+[dependencies]
+actix-web="4"
+tokio={version="1", features=["macros","rt-multi-thread"]}
+# 옵셔널 derive 피처를 사용해야, serde 의 절차적 매크로인 #[derve(Serialize)] 와 #[derive(Deserialize)] 를 사용할 수 있다.
+# 이 피터는 기본으로 활성화되어 있지 않다. 프로젝트에 불필요한 디펜던시를 사용하지 않도록 하기 위해서이다.
+serde = {version = "1", features = ["derive"]}
+config = "0.13"
+
+# 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
+[dependencies.sqlx]
+version = "0.6.3"
+default-features = false
+features = [
+    "runtime-tokio-rustls",
+    "macros",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate"
+]

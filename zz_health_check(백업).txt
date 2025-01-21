@@ -1,0 +1,109 @@
+#####20250117_다듬기전(p46)#####
+/*
+    tokio::test는 테스트에 있어서 tokio::main과 동등하다
+    #[test] 속성을 지정하는 수고를 덜 수 있다
+
+    cargo expand --test health_checl을 사용해서 코드가 무엇을 생성하는지 확이할 수 있다.
+*/
+
+#[tokio::test]
+async fn health_check_works() {
+    //Arrange(준비)
+    spawn_app();
+    //reqwest 를 사용해서 애플리케이션에 대한 HTTP 요청을 수행한다
+    let client = reqwest::Client::new();
+
+    //Act(조작)
+    let response = client
+        .get("http://127.0.0.1:8080/health_check")
+        .send()
+        .await
+        .expect("Faules to exectue request");
+
+    //Assert(결과 확인)
+    assert!(response.status().is_success());
+    assert_eq!(Some(0), response.content_length());
+}
+
+
+// .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다.
+// 테스트를 실행하고 있으므로, 오류를 전파하지 않아도 된다.
+// 만약 필요한 셋업을 수행하는 데 실해한다면, 모즌 작업을 깨뜨리면 된다.
+fn spawn_app() {
+    let server = zero2prod::run().expect("Failed to bind address");
+    // 서버를 백그라운드로 구동
+    // tokio:spawn은 생성된 퓨처에 대한 핸들을 반환하다. 하지만 여기서는 사용을 안하므로 let을 바인딩 하지 않는다.
+    let _ = tokio::spawn(server);
+}
+
+/* 
+use zero2prod::main 이 에러나는 이류 프로젝트를 라이브러리와 바이너리로 리팩터링을 안했기 때문 
+    모든 로직은 라이브러리 크레이트에 존재, 바이ㅓ리 자체는 매우 작은 main  gkatnfmf rkwls dpsxmflvhdlsxmrk ehla
+*/
+
+####20250117_포트를 하드코딩 하지않는 작업 전####
+#[tokio::test]
+async fn health_check_works() {
+    //Arrange(준비)
+    spawn_app();
+    //reqwest 를 사용해서 애플리케이션에 대한 HTTP 요청을 수행한다
+    let client = reqwest::Client::new();
+
+    //Act(조작)
+    let response = client
+        .get("http://127.0.0.1:8080/health_check")
+        .send()
+        .await
+        .expect("Faules to exectue request");
+
+    //Assert(결과 확인)
+    assert!(response.status().is_success());
+    assert_eq!(Some(0), response.content_length());
+}
+
+fn spawn_app() {
+    let server = zero2prod::run("127.0.0.1:0").expect("Failed to bind address");
+    // 서버를 백그라운드로 구동
+    // tokio:spawn은 생성된 퓨처에 대한 핸들을 반환하다. 하지만 여기서는 사용을 안하므로 let을 바인딩 하지 않는다.
+    let _ = tokio::spawn(server);
+}
+
+/*
+    tokio::test는 테스트에 있어서 tokio::main과 동등하다
+    #[test] 속성을 지정하는 수고를 덜 수 있다
+
+    cargo expand --test health_checl을 사용해서 코드가 무엇을 생성하는지 확이할 수 있다.
+*/
+
+####작업 후#####
+use std::net::TcpListener;
+
+#[tokio::test]
+async fn health_check_works() {
+    //Arrange(준비)
+    let address = spawn_app();
+    //reqwest 를 사용해서 애플리케이션에 대한 HTTP 요청을 수행한다
+    let client = reqwest::Client::new();
+
+    //Act(조작)
+    let response = client
+        .get(&format!("{}/health_check", &address))
+        .send()
+        .await
+        .expect("Faules to exectue request");
+
+    //Assert(결과 확인)
+    assert!(response.status().is_success());
+    assert_eq!(Some(0), response.content_length());
+}
+
+fn spawn_app() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .expect("Failed to bind random port");
+    //OS가 할당한 포트 번호를 추출한다.
+    let port = listener.local_addr().unwrap().port();
+    let server = zero2prod::run(listener).expect("Failed to bind address");
+    let _ = tokio::spawn(server);
+    //애플리케이션 주소를 호출자에게 반환한다.
+    format!("http://127.0.0.1:{}", port)
+}
