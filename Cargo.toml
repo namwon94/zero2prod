@@ -27,6 +27,9 @@ serde = {version = "1", features = ["derive"]}
 config = "0.13"
 uuid = {version = "1", features = ["v4"]}
 chrono = {version = "0.4.22", default-features = false, features = ["clock"]}
+env_logger = "0.9"
+log = "0.4"
+tracing = {version = "0.1", features = ["log"]}
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 [dependencies.sqlx]
