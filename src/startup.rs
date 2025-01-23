@@ -1,12 +1,13 @@
 use actix_web::dev::Server;
-use actix_web::web::Data;
+//use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
-use actix_web::middleware::Logger;
+//use actix_web::middleware::Logger;
 use crate::routes::{
     health_check, subscribe
 };
 use sqlx::PgPool;
 use std::net::TcpListener;
+use tracing_actix_web::TracingLogger;
 
 pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.
@@ -21,7 +22,7 @@ pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Er
     let server = HttpServer::new(move || {
         App::new()
             //'App'에 대해 'wrap'메서드를 사용해서 미들웨어들을 추가한다.
-            .wrap(Logger::default())
+            .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
             //POST /subscriptions 요청에 대한 라우팅 테이블의 새 엔트리 포인트
             .route("/subscriptions", web::post().to(subscribe))

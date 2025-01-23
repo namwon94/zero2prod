@@ -7,7 +7,10 @@ use std::net::TcpListener;
 use sqlx::{Connection, Execute, Executor, PgConnection, PgPool};
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
 use zero2prod::startup::run;
+use zero2prod::telemetry::{get_subscriber, init_subscriber};
 use uuid::Uuid;
+use once_cell::sync::Lazy;
+use secrecy::ExposeSecret;
 
 #[tokio::test]
 async fn health_check_works() {
@@ -89,6 +92,30 @@ async fn subscribe_return_a_400_when_data_is_missing() {
     }
 }
 
+//'once_cell' 을 사용해서 'TRACING' 스택이 한 번만 초기화되는 것을 보장한다.
+static TRACING: Lazy<()> = Lazy::new(|| {
+    let default_filter_level = "into".to_string();
+    let subscriber_name = "test".to_string();
+    //'get_subscriber'의 출력을 'TEST_LOG'의 값에 기반해서 변수에 할당할 수 없다.
+    //왜냐하면 해당 sink는 'get_subscriber'에 의해 반환된 타입의 일부이고, 그들의 타입이 같지 않기 때문이다
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(
+            subscriber_name, 
+            default_filter_level, 
+            std::io::stdout
+        );
+        init_subscriber(subscriber);
+    }
+    else {
+        let subscriber = get_subscriber(
+            subscriber_name,
+            default_filter_level,
+            std::io::sink
+        );
+        init_subscriber(subscriber);
+    }
+});
+
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool
@@ -101,6 +128,10 @@ use zero2prod::main 이 에러나는 이류 프로젝트를 라이브러리와 �
     모든 로직은 라이브러리 크레이트에 존재, 바이너리 자체는 매우 작은 main 함수를 가진 엔트리포인트가 됨.
 */
 async fn spawn_app() -> TestApp {
+    //'initialize'가 첫번째 호출되면 'TRACING' 안의 코드가 실행된다. 다른 모든 호출은 실행을 건너뛴다.
+    Lazy::force(&TRACING);
+
+
     let listener = TcpListener::bind("127.0.0.1:0")
         .expect("Failed to bind random port");
     //OS가 할당한 포트 번호를 추출한다.
@@ -132,7 +163,7 @@ async fn spawn_app() -> TestApp {
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     //데이터베이스를 생성한다.
     let mut connection = PgConnection::connect(
-        &config.connection_string_without_db()
+        &config.connection_string_without_db().expose_secret()
         )
         .await
         .expect("Failed to connect to Postgres");
@@ -142,7 +173,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to create database");
     
     //데이터 베이스를 마이그레이션 한다.
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
         .await
         .expect("Filed to connect to Postgres");
     sqlx::migrate!("./migrations")
