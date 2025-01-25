@@ -36,6 +36,8 @@ secrecy = {version = "0.8", features = ["serde"]}
 tracing-actix-web = "0.6"
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
+# docker build 시 cargo build를 도커 이미지 안에서 실행하면, sqlx는 .env 파일의 DATABASE_URL 환결 변수가 가리키는 데이터베이스와 커넥션을 만드는데 실패함 
+# -> "offline" 추가
 [dependencies.sqlx]
 version = "0.6.3"
 default-features = false
@@ -45,5 +47,6 @@ features = [
     "postgres",
     "uuid",
     "chrono",
-    "migrate"
+    "migrate",
+    "offline"
 ]

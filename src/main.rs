@@ -19,13 +19,12 @@ async fn main() -> std::io::Result<()> {
     init_subscriber(subscriber);
     // 구성을 읽을 수 없으면 패닉에 빠진다
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection_pool = PgPool::connect(
+    let connection_pool = PgPool::connect_lazy(
         &configuration.database.connection_string().expose_secret()
     )
-    .await
     .expect("Failed to connect to Postgres.");
     // 하드코딩했던 '8080'을 제거했다. 해당 값은 세팅에서 얻는다.
-    let address = format!("127.0.0.1:{}", configuration.application_port);
+    let address = format!("{}:{}",configuration.application.host, configuration.application.port);
     let listener = TcpListener::bind(address)?;
     run(listener, connection_pool)?.await
 }
