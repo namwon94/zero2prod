@@ -1,0 +1,10 @@
+.env
+target/
+tests/
+Dockerfile
+scripts/
+migrations/
+zz_health_check(백업).txt
+zz_lib(백업).txt
+zz_main(백업).txt
+zz_study.txt

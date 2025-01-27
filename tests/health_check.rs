@@ -10,7 +10,7 @@ use zero2prod::startup::run;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 use uuid::Uuid;
 use once_cell::sync::Lazy;
-use secrecy::ExposeSecret;
+//use secrecy::ExposeSecret;
 
 #[tokio::test]
 async fn health_check_works() {
@@ -162,9 +162,8 @@ async fn spawn_app() -> TestApp {
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     //데이터베이스를 생성한다.
-    let mut connection = PgConnection::connect(
-        &config.connection_string_without_db().expose_secret()
-        )
+    let mut connection = PgConnection::connect_with(
+        &config.without_db())
         .await
         .expect("Failed to connect to Postgres");
     connection
@@ -173,7 +172,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to create database");
     
     //데이터 베이스를 마이그레이션 한다.
-    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
+    let connection_pool = PgPool::connect_with(config.with_db())
         .await
         .expect("Filed to connect to Postgres");
     sqlx::migrate!("./migrations")
