@@ -1,10 +1,6 @@
 //'String'과 '&str'에 'graphemes' 메서드를 제공하기 위한 확장 트레이트
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct NewSubscriber {
-    pub email: String,
-    pub name: SubscriberName
-}
 /*
     튜플 구조체 : String 타입의 단일 필드(이름이 없는)를 갖는 새로운 타입 
         -> String에 사용할 수 있는 어떤 메서드도 상속하지 않으며, 타입 변수에 String을 할당하려하면 컴파일 오류남

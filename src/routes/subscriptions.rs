@@ -28,9 +28,14 @@ pub async fn subscribe(
     pool: web::Data<PgPool>
 ) -> HttpResponse {
     //'web::Form'은 'FormData'의 래퍼이다. 'form.0'을 사용하면 기반 'FormData'에 접근할 수 있다.
+    let name = match SubscriberName::parse(form.0.name){
+        Ok(name) => name,
+        //name이 유효하지 않으면 400을 빠르게 반환한다.
+        Err(_) => return HttpResponse::BadRequest().finish()
+    };
     let new_subscriber = NewSubscriber {
         email: form.0.email,
-        name: SubscriberName::parse(form.0.name).expect("Name validation failed.")
+        name
     };
     //'Result'는 'Ok'와 'Err'라는 두개의 변형(variant)를 갖는다.(성공과 실패 의미)
     //'match' 구문을 사용해서 결과에 따라 무엇을 수행할지 선택한다.
