@@ -4,13 +4,24 @@ use sqlx::PgPool;
 use chrono::Utc;
 //use tracing::Instrument;
 use uuid::Uuid;
-use crate::domain::{NewSubscriber, SubscriberName};
+use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
     email: String,
     name: String
 }   
+
+//와이어 포맷(HTML 폼에서 수집한 url-decoded 데이터)을 도메인 모델(NewSubscriber)로 변환한다.
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(value: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(value.name)?;
+        let email = SubscriberEmail::parse(value.email)?;
+        Ok(Self {email, name})
+    }
+}
 
 //traccing::instrument가 비동기함수에 적용될 때는 Instrument::instrument를 사용하도록 주의해야한다.
 #[tracing::instrument(
@@ -22,20 +33,30 @@ pub struct FormData {
     )
 )]
 
-//항상 200 OK를 반환시킴
+//유입되는 HTTP 요청에 대해 HTTP 응답을 생성한다.
 pub async fn subscribe(
     form: web::Form<FormData>, 
     pool: web::Data<PgPool>
 ) -> HttpResponse {
     //'web::Form'은 'FormData'의 래퍼이다. 'form.0'을 사용하면 기반 'FormData'에 접근할 수 있다.
+    /* 20250203 / p246 / 리팩토링
     let name = match SubscriberName::parse(form.0.name){
         Ok(name) => name,
         //name이 유효하지 않으면 400을 빠르게 반환한다.
         Err(_) => return HttpResponse::BadRequest().finish()
     };
+    let email = match SubscriberEmail::parse(form.0.email) {
+        Ok(email) => email,
+        Err(_) => return HttpResponse::BadRequest().finish()
+    };
     let new_subscriber = NewSubscriber {
-        email: form.0.email,
+        email,
         name
+    };
+     */
+    let new_subscriber = match form.0.try_into() {
+        Ok(form) => form,
+        Err(_) => return HttpResponse::BadRequest().finish()
     };
     //'Result'는 'Ok'와 'Err'라는 두개의 변형(variant)를 갖는다.(성공과 실패 의미)
     //'match' 구문을 사용해서 결과에 따라 무엇을 수행할지 선택한다.
@@ -91,7 +112,7 @@ pub async fn insert_subscriber(
         VALUES ($1, $2, $3, $4)
         "#,
         Uuid::new_v4(),
-        new_subscriber.email,
+        new_subscriber.email.as_ref(),
         // 'as_ref'를 사용한다.
         new_subscriber.name.as_ref(),
         Utc::now()

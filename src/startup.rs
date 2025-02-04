@@ -8,10 +8,12 @@ use crate::routes::{
 use sqlx::PgPool;
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
+use crate::email_client::EmailClient;
 
-pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.
     let db_pool = web::Data::new(db_pool);
+    let email_client = web::Data::new(email_client);
     /*
         move의 의미 
             : 소유권 이전 -> move 키워드는 클로저가 캡처하는 외부 변수들의 소유권을 클로저 내부로 이전시킵니다
@@ -28,6 +30,7 @@ pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Er
             .route("/subscriptions", web::post().to(subscribe))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
+            .app_data(email_client.clone())
     })
     .listen(listener)?
     .run();

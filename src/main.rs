@@ -6,6 +6,7 @@ use zero2prod::configuration::get_configuration;
 use sqlx::postgres::PgPoolOptions;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 //use secrecy::ExposeSecret;
+use zero2prod::email_client::EmailClient;
 
 /*
    'init'는 'set_logger'를 호출한다. 다른 작업은 필요하지 않다.
@@ -25,8 +26,20 @@ async fn main() -> std::io::Result<()> {
         .connect_lazy_with(
             configuration.database.with_db()
         );
+
+    //20250204 추가 - 'configuration'를 사용해서 'EmailClient'를 만든다.
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid sender email address");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token
+    );
+    
+    //20250204 추가
+
     // 하드코딩했던 '8080'을 제거했다. 해당 값은 세팅에서 얻는다.
     let address = format!("{}:{}",configuration.application.host, configuration.application.port);
     let listener = TcpListener::bind(address)?;
-    run(listener, connection_pool)?.await
+    run(listener, connection_pool, email_client)?.await
 }

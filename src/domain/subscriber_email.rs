@@ -25,6 +25,9 @@ impl AsRef<str> for SubscriberEmail {
 mod tests {
     use super::SubscriberEmail;
     use claim::assert_err;
+    //'SafeEmail' 페이커를 임포트 한다. 또한 'Fake' 트레이트를 사용해서 'SafeEmail'의 '.fake' 메서드에 접근한다.
+    use fake::faker::internet::en::SafeEmail;
+    use fake::Fake;
 
     #[test]
     fn empty_string_is_rejected() {
@@ -42,5 +45,22 @@ mod tests {
     fn email_missing_subject_is_rejected() {
         let email = "@domain.com".to_string();
         assert_err!(SubscriberEmail::parse(email));
+    }
+
+    //'quickcheck'는 'Clone'과 'Debug'가 필요하다.
+    #[derive(Debug, Clone)]
+    struct ValidEmailFixture(pub String);
+
+    impl quickcheck::Arbitrary for ValidEmailFixture {
+        fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Self {
+            let email = SafeEmail().fake_with_rng(g);
+            Self(email)
+        }
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn valid_emails_are_parsed_successfully(valid_email: ValidEmailFixture) -> bool {
+        dbg!(&valid_email.0);
+        SubscriberEmail::parse(valid_email.0).is_ok()
     }
 }

@@ -1,6 +1,8 @@
-use crate::domain::subscriber_name::SubscriberName;
+use crate::domain::SubscriberName;
+use crate::domain::SubscriberEmail;
 
 pub struct NewSubscriber {
-    pub email: String,
+    //String은 더 이상 사용하지 않는다.
+    pub email: SubscriberEmail,
     pub name: SubscriberName
 }

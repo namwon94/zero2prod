@@ -11,6 +11,7 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 use uuid::Uuid;
 use once_cell::sync::Lazy;
 //use secrecy::ExposeSecret;
+use zero2prod::email_client::EmailClient;
 
 #[tokio::test]
 async fn health_check_works() {
@@ -149,7 +150,17 @@ async fn spawn_app() -> TestApp {
     let connection_pool = configure_database(&configuration.database)
         .await;
 
-    let server = run(listener, connection_pool.clone())
+    //20250204 추가
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid sender email address");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token
+    );
+    //20250204 추가
+
+    let server = run(listener, connection_pool.clone(), email_client)
         .expect("Failed to bind address");
     let _ = tokio::spawn(server);
     TestApp {

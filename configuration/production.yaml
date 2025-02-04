@@ -3,3 +3,10 @@ application:
 database:
   # New entry!
   require_ssl: true
+email_client:
+  # Value retrieved from Postmark's API documentation
+  # Postmark의 API 문서에서 가져온 값
+  base_url: "hppts://api.postmarkapp.com"
+  # Use the single sender email you authorised on Postmark
+  # Posrmark에서 권한을 받은 single sender email을 사용한다.
+  sender_email: "nwk@newsletter.com"
