@@ -16,7 +16,6 @@ path = "src/main.rs"
 name = "zero2prod"
 
 [dev-dependencies]
-# reqwest = "0.11" (dev.reqwest추가 로 인한 삭제)
 once_cell = "1"
 claim = "0.5"
 # We are not using fake >= 2.4 because it relies on rank 0.8
