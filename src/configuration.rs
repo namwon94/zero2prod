@@ -4,22 +4,22 @@ use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::ConnectOptions;
 use crate::domain::SubscriberEmail;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     //20250204 새 필드 추가
-    pub email_client: EmailClientSettins
+    pub email_client: EmailClientSettings
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: Secret<String>,
@@ -32,11 +32,13 @@ pub struct DatabaseSettings {
 }
 
 //20250204 추가
-#[derive(serde::Deserialize)]
-pub struct EmailClientSettins {
+#[derive(serde::Deserialize, Clone)]
+pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
-    pub authorization_token: Secret<String>
+    pub authorization_token: Secret<String>,
+    //New configuration value 20250205
+    pub timeout_milliseconds: u64
 }
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
@@ -144,8 +146,11 @@ impl DatabaseSettings {
 }
 
 //20250204 추가
-impl EmailClientSettins {
+impl EmailClientSettings {
     pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
+    }
+    pub fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.timeout_milliseconds)
     }
 }

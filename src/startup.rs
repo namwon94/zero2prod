@@ -9,6 +9,60 @@ use sqlx::PgPool;
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 use crate::email_client::EmailClient;
+use crate::configuration::Settings;
+use crate::configuration::DatabaseSettings;
+use sqlx::postgres::PgPoolOptions;
+
+//새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
+pub struct Application {
+    port: u16,
+    server: Server
+}
+
+impl Application {
+    pub async fn build(configuration: Settings) -> Result<Self, std::io::Error> {
+        //'build' 함수를 'Application'에 대한 생성자로 변환했다
+        let connection_pool = get_connection_pool(&configuration.database);
+        let sender_email = configuration
+            .email_client
+            .sender()
+            .expect("Invalid sender email address");
+        let timeout = configuration.email_client.timeout();
+        let email_client = EmailClient::new(
+            configuration.email_client.base_url,
+            sender_email,
+            configuration.email_client.authorization_token,
+            timeout
+        );
+        let address = format!(
+            "{}:{}",
+            configuration.application.host, configuration.application.port
+        );
+        let listener = TcpListener::bind(&address)?;
+        let port = listener.local_addr().unwrap().port();
+        let server = run(listener, connection_pool, email_client)?;
+
+         //바운드된 포트를 'Application'의 필드 중 하나로 저장한다.
+        Ok(Self{port, server})
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    // 이 함수는 애플리케이션이 중지되었을 때만 값을 반환한다는 것을 명확하게 나타내는 이름을 사용한다.
+    pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
+        self.server.await
+    }
+}
+
+pub fn get_connection_pool(
+    configuration: &DatabaseSettings
+) -> PgPool {
+    PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_lazy_with(configuration.with_db())
+}
 
 pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.

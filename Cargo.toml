@@ -47,6 +47,11 @@ secrecy = {version = "0.8", features = ["serde"]}
 tracing-actix-web = "0.6"
 unicode-segmentation = "1"
 validator = "0.14"
+reqwest = { version = "0.11", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "cookies",
+] }
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 # docker build 시 cargo build를 도커 이미지 안에서 실행하면, sqlx는 .env 파일의 DATABASE_URL 환결 변수가 가리키는 데이터베이스와 커넥션을 만드는데 실패함 
@@ -63,11 +68,3 @@ features = [
     "migrate",
     "offline"
 ]
-
-# 20240204 추가
-[dependencies.reqwest]
-version = "0.11"
-deafult-features = false
-# We need the 'json' feature flag to serialize/deserialize JSON payloads
-# JSON 페이로드를 직렬화/역직렬화하기 위해 'json' 기능 플래그를 사용한다.
-features = ["json", "rustls-tls"]

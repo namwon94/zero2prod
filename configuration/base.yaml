@@ -11,3 +11,4 @@ email_client:
   sender_email: "test@gmail.com"
   # 개발 관련 토큰만 설정한다. 프로덕션 토큰은 버전 관리 도구 밖에서 관리한다.
   authorization_token: "my-secret-token"
+  timeout_milliseconds: 10000
