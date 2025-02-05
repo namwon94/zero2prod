@@ -5,7 +5,7 @@
 */
 use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net::TcpListener;
+//use std::net::TcpListener;
 use uuid::Uuid;
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
 //use zero2prod::email_client::EmailClient;
@@ -65,13 +65,12 @@ pub async fn spawn_app() -> TestApp {
     //'initialize'가 첫번째 호출되면 'TRACING' 안의 코드가 실행된다. 다른 모든 호출은 실행을 건너뛴다.
     Lazy::force(&TRACING);
 
+    /*
     let listener = TcpListener::bind("127.0.0.1:0")
         .expect("Failed to bind random port");
     //OS가 할당한 포트 번호를 추출한다.
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-
-    /*
     let mut configuration = get_configuration().expect("Failed to read configuration,");
     configuration.database.database_name = Uuid::new_v4().to_string();
 
