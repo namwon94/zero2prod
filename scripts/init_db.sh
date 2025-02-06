@@ -26,7 +26,7 @@ DB_PORT="${POSTGRES_PORT:=5432}"
 
 # 도커를 사용해서 postgres를 구동한다
 # 도커화된 postgres 데이터베이스가 이미 실행 중이면 도커가 이 단계를 건너뛸 수 있게 한다.
-if [ -z "${SKIP_DOCKER}"]
+if [[ -z "${SKIP_DOCKER}" ]]
 then
    docker run \
       -e POSTGRES_USER=${DB_USER} \
@@ -39,7 +39,7 @@ then
 fi
 # Postgres가 명령어를 받아들일 준비가 될 때까지 핑을 유지한다.
 export PGPASSWORD="${DB_PASSWORD}"
-until psql -f "localhost" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do
+until psql -h "localhost" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do
    >&2 echo "Postgres is still unavailable - sleeping"
    sleep 1
 done

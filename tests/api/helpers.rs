@@ -12,6 +12,8 @@ use zero2prod::configuration::{get_configuration, DatabaseSettings};
 //use zero2prod::startup::run;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 use zero2prod::startup::{Application, get_connection_pool};
+//20250206 추가 mock서버를 실행해서 Postmark의 API를 대신하게 하고 밖으로 전송되는 요청을 가로채야 됨.
+use wiremock::MockServer;
 
 //'once_cell' 을 사용해서 'TRACING' 스택이 한 번만 초기화되는 것을 보장한다.
 static TRACING: Lazy<()> = Lazy::new(|| {
@@ -39,7 +41,9 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 
 pub struct TestApp {
     pub address: String,
-    pub db_pool: PgPool
+    pub db_pool: PgPool,
+    //20250206 추가
+    pub email_server: MockServer
 }
 
 impl TestApp {
@@ -65,12 +69,17 @@ pub async fn spawn_app() -> TestApp {
     //'initialize'가 첫번째 호출되면 'TRACING' 안의 코드가 실행된다. 다른 모든 호출은 실행을 건너뛴다.
     Lazy::force(&TRACING);
 
+    //20250206 - mock 서버를 구동해서 Postmark의 API를 대신한다.
+    let email_server = MockServer::start().await;
+
     let configuration = {
         let mut c = get_configuration().expect("Failed to read configuration");
         //테스트 케이스마다 다른 데이터베이스를 사용한다.
         c.database.database_name = Uuid::new_v4().to_string();
         //무작위 OS 포트를 사용한다.
         c.application.port = 0;
+        //202502026 - mock 서버를 이메일 API로서 사용한다.
+        c.email_client.base_url = email_server.uri();
         c
     };
     //데이터베이스를 생성하고 마이그레이션한다.
@@ -91,7 +100,8 @@ pub async fn spawn_app() -> TestApp {
 
     TestApp {
         address,
-        db_pool: get_connection_pool(&configuration.database)
+        db_pool: get_connection_pool(&configuration.database),
+        email_server
     }
     //애플리케이션 주소를 호출자에게 반환한다.
     //format!("http://127.0.0.1:{}", port)

@@ -5,6 +5,8 @@ use chrono::Utc;
 //use tracing::Instrument;
 use uuid::Uuid;
 use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
+//20250206 추가
+use crate::email_client::EmailClient;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -26,7 +28,7 @@ impl TryFrom<FormData> for NewSubscriber {
 //traccing::instrument가 비동기함수에 적용될 때는 Instrument::instrument를 사용하도록 주의해야한다.
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool),
+    skip(form, pool, email_client),
     fields(
         subscriber_email = %form.email,
         subscriber_name = %form.name
@@ -36,7 +38,9 @@ impl TryFrom<FormData> for NewSubscriber {
 //유입되는 HTTP 요청에 대해 HTTP 응답을 생성한다.
 pub async fn subscribe(
     form: web::Form<FormData>, 
-    pool: web::Data<PgPool>
+    pool: web::Data<PgPool>,
+    //20250206 추가 - 앱 콘테스트에서 이메일 클라이언트를 얻는다.
+    email_client: web::Data<EmailClient>
 ) -> HttpResponse {
     let new_subscriber = match form.0.try_into() {
         Ok(form) => form,
@@ -44,18 +48,36 @@ pub async fn subscribe(
     };
     //'Result'는 'Ok'와 'Err'라는 두개의 변형(variant)를 갖는다.(성공과 실패 의미)
     //'match' 구문을 사용해서 결과에 따라 무엇을 수행할지 선택한다.
-    match insert_subscriber(&pool, &new_subscriber).await {
-        Ok(_) => {
-            tracing::info!("New subscriber details have been saved");
-            HttpResponse::Ok().finish()
-        },
-        Err(e) => {
-            //우리가 기대한 대로 작동하지 않은 경우, println을 사용해서 오류에 관한 정보를 잡아낸다.
-            //println!("Failed to execute query: {}", e);
-            tracing::error!("failed to execute query: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+    // match insert_subscriber(&pool, &new_subscriber).await {
+    //     Ok(_) => {
+    //         tracing::info!("New subscriber details have been saved");
+    //         HttpResponse::Ok().finish()
+    //     },
+    //     Err(e) => {
+    //         //우리가 기대한 대로 작동하지 않은 경우, println을 사용해서 오류에 관한 정보를 잡아낸다.
+    //         //println!("Failed to execute query: {}", e);
+    //         tracing::error!("failed to execute query: {}", e);
+    //         HttpResponse::InternalServerError().finish()
+    //     }
+    // }
+
+    if insert_subscriber(&pool, &new_subscriber).await.is_err() {
+        return HttpResponse::InternalServerError().finish();
     }
+    //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
+    if email_client
+        .send_email(
+            new_subscriber.email,
+            "Welcome!",
+            "Welcome to out newsletter!",
+            "Welcome to our newsletter!"
+        )
+        .await
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().finish();
+    }
+    HttpResponse::Ok().finish()
 }
 //입력이 subscriber 이름에 대한 검증 제약 사항을 모두 만족하면 'true'를 반환한다.
 //그렇지 않으면 'false'를 반환한다.
@@ -92,8 +114,8 @@ pub async fn insert_subscriber(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO subscriptions (id, email, name, subscribed_at, status)
+        VALUES ($1, $2, $3, $4, 'confirmed')
         "#,
         Uuid::new_v4(),
         new_subscriber.email.as_ref(),

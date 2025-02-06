@@ -1,0 +1,48 @@
+테스트 격리를 보장하기 위해 구성을 무작위화 하기위해 새로 구성(20250205) /tests/api/help.rs - spawn_app() 부분
+    
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .expect("Failed to bind random port");
+    //OS가 할당한 포트 번호를 추출한다.
+    let port = listener.local_addr().unwrap().port();
+    let address = format!("http://127.0.0.1:{}", port);
+    let mut configuration = get_configuration().expect("Failed to read configuration,");
+    configuration.database.database_name = Uuid::new_v4().to_string();
+
+    let connection_pool = configure_database(&configuration.database)
+        .await;
+
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid sender email address");
+    let timeout = configuration.email_client.timeout();
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token,
+        timeout
+    );
+    let server = run(listener, connection_pool.clone(), email_client)
+        .expect("Failed to bind address");
+    let _ = tokio::spawn(server);
+    TestApp {
+        address,
+        db_pool: connection_pool
+    }
+
+/routes/subscriptions subscribe 부분 20250203 / p246 / 리팩토링
+//'web::Form'은 'FormData'의 래퍼이다. 'form.0'을 사용하면 기반 'FormData'에 접근할 수 있다.
+    
+    let name = match SubscriberName::parse(form.0.name){
+        Ok(name) => name,
+        //name이 유효하지 않으면 400을 빠르게 반환한다.
+        Err(_) => return HttpResponse::BadRequest().finish()
+    };
+    let email = match SubscriberEmail::parse(form.0.email) {
+        Ok(email) => email,
+        Err(_) => return HttpResponse::BadRequest().finish()
+    };
+    let new_subscriber = NewSubscriber {
+        email,
+        name
+    };
+    
+     
