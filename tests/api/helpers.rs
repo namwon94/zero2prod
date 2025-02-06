@@ -65,37 +65,6 @@ pub async fn spawn_app() -> TestApp {
     //'initialize'가 첫번째 호출되면 'TRACING' 안의 코드가 실행된다. 다른 모든 호출은 실행을 건너뛴다.
     Lazy::force(&TRACING);
 
-    /*
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("Failed to bind random port");
-    //OS가 할당한 포트 번호를 추출한다.
-    let port = listener.local_addr().unwrap().port();
-    let address = format!("http://127.0.0.1:{}", port);
-    let mut configuration = get_configuration().expect("Failed to read configuration,");
-    configuration.database.database_name = Uuid::new_v4().to_string();
-
-    let connection_pool = configure_database(&configuration.database)
-        .await;
-
-    let sender_email = configuration.email_client.sender()
-        .expect("Invalid sender email address");
-    let timeout = configuration.email_client.timeout();
-    let email_client = EmailClient::new(
-        configuration.email_client.base_url,
-        sender_email,
-        configuration.email_client.authorization_token,
-        timeout
-    );
-    let server = run(listener, connection_pool.clone(), email_client)
-        .expect("Failed to bind address");
-    let _ = tokio::spawn(server);
-    TestApp {
-        address,
-        db_pool: connection_pool
-    }
-
-    테스트 격리를 보장하기 위해 구성을 무작위화 하기위해 새로 구성(20250205)
-     */
     let configuration = {
         let mut c = get_configuration().expect("Failed to read configuration");
         //테스트 케이스마다 다른 데이터베이스를 사용한다.

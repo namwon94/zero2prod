@@ -38,22 +38,6 @@ pub async fn subscribe(
     form: web::Form<FormData>, 
     pool: web::Data<PgPool>
 ) -> HttpResponse {
-    //'web::Form'은 'FormData'의 래퍼이다. 'form.0'을 사용하면 기반 'FormData'에 접근할 수 있다.
-    /* 20250203 / p246 / 리팩토링
-    let name = match SubscriberName::parse(form.0.name){
-        Ok(name) => name,
-        //name이 유효하지 않으면 400을 빠르게 반환한다.
-        Err(_) => return HttpResponse::BadRequest().finish()
-    };
-    let email = match SubscriberEmail::parse(form.0.email) {
-        Ok(email) => email,
-        Err(_) => return HttpResponse::BadRequest().finish()
-    };
-    let new_subscriber = NewSubscriber {
-        email,
-        name
-    };
-     */
     let new_subscriber = match form.0.try_into() {
         Ok(form) => form,
         Err(_) => return HttpResponse::BadRequest().finish()
