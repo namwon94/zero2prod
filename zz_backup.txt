@@ -44,5 +44,20 @@
         email,
         name
     };
-    
+
+/routes/subscriptions subscriber 부분 20250206 / 리팩토링
+    //'Result'는 'Ok'와 'Err'라는 두개의 변형(variant)를 갖는다.(성공과 실패 의미)
+    //'match' 구문을 사용해서 결과에 따라 무엇을 수행할지 선택한다.
+     match insert_subscriber(&pool, &new_subscriber).await {
+         Ok(_) => {
+             tracing::info!("New subscriber details have been saved");
+             HttpResponse::Ok().finish()
+         },
+         Err(e) => {
+             //우리가 기대한 대로 작동하지 않은 경우, println을 사용해서 오류에 관한 정보를 잡아낸다.
+             //println!("Failed to execute query: {}", e);
+             tracing::error!("failed to execute query: {}", e);
+             HttpResponse::InternalServerError().finish()
+         }
+     }
      

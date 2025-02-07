@@ -46,38 +46,39 @@ pub async fn subscribe(
         Ok(form) => form,
         Err(_) => return HttpResponse::BadRequest().finish()
     };
-    //'Result'는 'Ok'와 'Err'라는 두개의 변형(variant)를 갖는다.(성공과 실패 의미)
-    //'match' 구문을 사용해서 결과에 따라 무엇을 수행할지 선택한다.
-    // match insert_subscriber(&pool, &new_subscriber).await {
-    //     Ok(_) => {
-    //         tracing::info!("New subscriber details have been saved");
-    //         HttpResponse::Ok().finish()
-    //     },
-    //     Err(e) => {
-    //         //우리가 기대한 대로 작동하지 않은 경우, println을 사용해서 오류에 관한 정보를 잡아낸다.
-    //         //println!("Failed to execute query: {}", e);
-    //         tracing::error!("failed to execute query: {}", e);
-    //         HttpResponse::InternalServerError().finish()
-    //     }
-    // }
 
     if insert_subscriber(&pool, &new_subscriber).await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
-    //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
-    if email_client
-        .send_email(
-            new_subscriber.email,
-            "Welcome!",
-            "Welcome to out newsletter!",
-            "Welcome to our newsletter!"
-        )
-        .await
-        .is_err()
-    {
+    if send_confirmation_email(&email_client, new_subscriber).await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
     HttpResponse::Ok().finish()
+    
+    //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
+}
+
+#[tracing::instrument(
+    name = "Send a confirmation eamil to a new subscriber",
+    skip(email_client, new_subscriber)
+)]
+pub async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_subscriber: NewSubscriber
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = "https://my-api.com/subscriptions/confirm";
+    let plain_body = format!(
+        "Welcome to our newsletter!\nvisit {} to confirm your subscription.",
+        confirmation_link
+    );
+    let html_body = format!(
+        "Welcome to our newsletter<br />\
+        Click <a href=\"{}>hereM/a> to confirm your subscription.",
+        confirmation_link
+
+    );
+
+    email_client.send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body).await
 }
 //입력이 subscriber 이름에 대한 검증 제약 사항을 모두 만족하면 'true'를 반환한다.
 //그렇지 않으면 'false'를 반환한다.
@@ -115,7 +116,7 @@ pub async fn insert_subscriber(
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at, status)
-        VALUES ($1, $2, $3, $4, 'confirmed')
+        VALUES ($1, $2, $3, $4, 'pending_confirmation')
         "#,
         Uuid::new_v4(),
         new_subscriber.email.as_ref(),
