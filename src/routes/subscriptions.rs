@@ -1,12 +1,16 @@
 use actix_web::{web, HttpResponse};
 //더 이상 PgConnection을 임포트하지 않는다.
-use sqlx::PgPool;
+use sqlx::{pool, PgPool};
 use chrono::Utc;
 //use tracing::Instrument;
 use uuid::Uuid;
 use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
 //20250206 추가
 use crate::email_client::EmailClient;
+//20250211 추가
+use crate::startup::ApplicationBaseUrl;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -28,7 +32,7 @@ impl TryFrom<FormData> for NewSubscriber {
 //traccing::instrument가 비동기함수에 적용될 때는 Instrument::instrument를 사용하도록 주의해야한다.
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool, email_client),
+    skip(form, pool, email_client, base_url),
     fields(
         subscriber_email = %form.email,
         subscriber_name = %form.name
@@ -40,17 +44,24 @@ pub async fn subscribe(
     form: web::Form<FormData>, 
     pool: web::Data<PgPool>,
     //20250206 추가 - 앱 콘테스트에서 이메일 클라이언트를 얻는다.
-    email_client: web::Data<EmailClient>
+    email_client: web::Data<EmailClient>,
+    //20250211 추가 - 도메인 전달 -> 도메인과 프로토콜은 애플리케이션이 실행되는 환경에 따라 다르기 때문에 새로 추가
+    base_url: web::Data<ApplicationBaseUrl>
 ) -> HttpResponse {
     let new_subscriber = match form.0.try_into() {
         Ok(form) => form,
         Err(_) => return HttpResponse::BadRequest().finish()
     };
-
-    if insert_subscriber(&pool, &new_subscriber).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
+    let subscriber_id = match insert_subscriber(&pool, &new_subscriber).await {
+        Ok(subscriber_id) => subscriber_id,
+        Err(_) => return HttpResponse::InternalServerError().finish()
+    };
+    let subscription_token = generate_subscription_token();
+    if store_token(&pool, subscriber_id, &subscription_token).await.is_err() {
+        return HttpResponse::InternalServerError().finish()
     }
-    if send_confirmation_email(&email_client, new_subscriber).await.is_err() {
+    //20250211 - 애플리케이션 url을 전달한다.
+    if send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token).await.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
     HttpResponse::Ok().finish()
@@ -58,15 +69,28 @@ pub async fn subscribe(
     //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
 }
 
+//대소문자를 구분하는 무작위 25문자로 구성된 구독 토큰을 생성한다.
+fn generate_subscription_token() -> String {
+    let mut rng = thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        .take(25)
+        .collect()
+}
+
 #[tracing::instrument(
     name = "Send a confirmation eamil to a new subscriber",
-    skip(email_client, new_subscriber)
+    skip(email_client, new_subscriber, base_url)
 )]
 pub async fn send_confirmation_email(
     email_client: &EmailClient,
-    new_subscriber: NewSubscriber
+    new_subscriber: NewSubscriber,
+    //20250211 추가
+    base_url: &str,
+    subscription_token: &str
 ) -> Result<(), reqwest::Error> {
-    let confirmation_link = "https://my-api.com/subscriptions/confirm";
+    //동적 루트와 함께 확인 링크르르 생성한다.
+    let confirmation_link = format!("{}/subscriptions/confirm?subscription_token={}", base_url, subscription_token);
     let plain_body = format!(
         "Welcome to our newsletter!\nvisit {} to confirm your subscription.",
         confirmation_link
@@ -80,29 +104,6 @@ pub async fn send_confirmation_email(
 
     email_client.send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body).await
 }
-//입력이 subscriber 이름에 대한 검증 제약 사항을 모두 만족하면 'true'를 반환한다.
-//그렇지 않으면 'false'를 반환한다.
-/* 
-pub fn is_valid_name(s: &str) -> bool {
-    //'.trim()'은 입력 's'에 대해 뒤로 계속되는 공백 문자가 없는 뷰를 반환한다.
-    //'.is_empty'는 해당 뷰가 문자를 포함하고 있는지 확인한다.
-    let is_empty_or_whitespace = s.trim().is_empty();
-    //grapheme는 "사용자가 인지할 수 있는" 문자로서 유니코드 표준에 의해 정의된다.
-    //'a'는 단일 grapheme이지만, 두 개의 문자가 조합된 것이다. (a 와 *)
-    //grapheme 입력 's'안의 grapheme에 대한 이터레이터를 반환한다.
-    //'true'는 우리가 확장된 grapheme 정의 셋, 즉 권장되는 정의 셋을 사용하기 원함을 의미한다.
-    let is_too_long = s.graphemes(true).count() > 256;
-
-    //입력 's'의 모든 문자들에 대해 반복하면서 forbidden 배열  안에 있는 문자 중, 어느 하나와 일치하는 문자가 있는지 확인한다.
-    let forbidden_characters = ['/', '(', ')', '"', '<', '>', '\\', '{', '}'];
-    let contains_forbidden_characters = s
-        .chars()
-        .any(|g| forbidden_characters.contains(&g));
-
-    //어떤 한 조건이라도 위반하면 'false'를 반환한다.
-    !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
-}
-*/
 
 #[tracing::instrument(
     name = "Saving new subscriber details int the database",
@@ -112,13 +113,15 @@ pub fn is_valid_name(s: &str) -> bool {
 pub async fn insert_subscriber(
     pool: &PgPool,
     new_subscriber: &NewSubscriber
-) -> Result<(), sqlx::Error> {
+) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, subscribed_at, status)
         VALUES ($1, $2, $3, $4, 'pending_confirmation')
         "#,
-        Uuid::new_v4(),
+        //구독자 id는 반환되거나 변수에 바운드되지 않는다.
+        subscriber_id,
         new_subscriber.email.as_ref(),
         // 'as_ref'를 사용한다.
         new_subscriber.name.as_ref(),
@@ -130,6 +133,30 @@ pub async fn insert_subscriber(
         tracing::error!("Failed to execute query: {:?}]", e);
         e   
     //'?'연산자를 사용해서 함수가 실패하면, 조기에 sqlx__Error를 반환한다. (오류 핸들링은 뒤에서 자세히)
+    })?;
+    Ok(subscriber_id)
+}
+
+#[tracing::instrument(
+    name = "Store subscription token in the database",
+    skip(subscription_token, pool)
+)]
+pub async fn store_token(
+    pool: &PgPool,
+    subscriber_id: Uuid,
+    subscription_token: &str
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO subscription_tokens ( subscription_token, subscriber_id)
+        VALUES ($1, $2)"#,
+        subscription_token,
+        subscriber_id
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
     })?;
     Ok(())
 }

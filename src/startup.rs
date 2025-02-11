@@ -12,6 +12,8 @@ use crate::email_client::EmailClient;
 use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
+//20250211 추가
+use crate::routes::confirm;
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -40,7 +42,7 @@ impl Application {
         );
         let listener = TcpListener::bind(&address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client)?;
+        let server = run(listener, connection_pool, email_client, configuration.application.base_url)?;
 
          //바운드된 포트를 'Application'의 필드 중 하나로 저장한다.
         Ok(Self{port, server})
@@ -64,10 +66,14 @@ pub fn get_connection_pool(
         .connect_lazy_with(configuration.with_db())
 }
 
-pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) -> Result<Server, std::io::Error> {
+//20250211 / 래퍼 타입을 정의해서 'subscribe' 핸들러에서 URL을 꺼낸다. acitx_web에서는 콘텍스트에서 꺼낸 값은 타입 기반 'String'을 사용하면 충돌이 발생
+pub struct ApplicationBaseUrl(pub String);
+
+pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, base_url: String) -> Result<Server, std::io::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
     /*
         move의 의미 
             : 소유권 이전 -> move 키워드는 클로저가 캡처하는 외부 변수들의 소유권을 클로저 내부로 이전시킵니다
@@ -82,9 +88,12 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient) ->
             .route("/health_check", web::get().to(health_check))
             //POST /subscriptions 요청에 대한 라우팅 테이블의 새 엔트리 포인트
             .route("/subscriptions", web::post().to(subscribe))
+            //confrim 요청에 대한 라우팅 테이블의 새 엔트리 포인트
+            .route("/subscriptions/confirm", web::get().to(confirm))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(listener)?
     .run();

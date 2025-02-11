@@ -37,6 +37,11 @@ services:
     routes:
       - path: /
   envs:
+    # We use DO's APP_URL to inject the dynamically provisioned base url as an enviroment variable
+    # 디지털 오션의 APP_URL을 사용해서 동적으로 프로비저닝된 base url을 환경변수로서 주입한다.
+    - key: APP_APPLICATION__BASE_URL
+      scope: RUN_TIME
+      value: ${APP_URL}
     - key: APP_DATABASE__USERNAME
       scope: RUN_TIME
       value: ${newsletter.USERNAME}

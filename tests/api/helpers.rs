@@ -39,7 +39,17 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+//이메일 API에 대한 요청에 포함된 확인 링크 
+//-> 외부로 나가는 이메일 요청으로부터 두 개의 확인링크를 추출하는 로직은 두 개의 테스트에서 중복되어짐 
+//-> 그래서 기능의 나머지 부분들을 구체화하면서 이 로직에 의존하는 것들을 더 추가
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub plain_text: reqwest::Url
+}
+
 pub struct TestApp {
+    //20250211 추가
+    pub port: u16,
     pub address: String,
     pub db_pool: PgPool,
     //20250206 추가
@@ -55,6 +65,37 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request")
+    }
+    //이메일 API에 대한 요청에 포함된 확인 링크르르 추출한다.
+    pub fn get_confirmation_links(
+        &self,
+        email_request: &wiremock::Request
+    ) -> ConfirmationLinks {
+        let body: serde_json::Value = serde_json::from_slice(
+            &email_request.body
+        ).unwrap();
+
+        //요청 필드의 하나로부터 링크를 추출한다.
+        let get_link = |s: &str| {
+            let links: Vec<_> = linkify::LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+            let raw_link = links[0].as_str().to_owned();
+            let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
+            //웹에 대해 무작위 API를 호출하지 않는 것을 확인한다.
+            assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
+            confirmation_link.set_port(Some(self.port)).unwrap();
+            confirmation_link
+        };
+
+        let html = get_link(&body["HtmlBody"].as_str().unwrap());
+        let plain_text = get_link(&body["TextBody"].as_str().unwrap());
+        ConfirmationLinks {
+            html,
+            plain_text
+        }
     }
 }
 
@@ -94,12 +135,16 @@ pub async fn spawn_app() -> TestApp {
     let application = Application::build(configuration.clone())
         .await
         .expect("Failed to build application");
+    let application_port = application.port();
     //포트를 얻은 뒤 애플리케이션을 시작한다.
-    let address = format!("http://127.0.0.1:{}", application.port());
+    //let address = format!("http://127.0.0.1:{}", application.port());
     let _ = tokio::spawn(application.run_until_stopped());
 
     TestApp {
-        address,
+        //20250211 수정
+        address: format!("http://localhost:{}", application_port),
+        //20250211 추가
+        port: application_port,
         db_pool: get_connection_pool(&configuration.database),
         email_server
     }
