@@ -2,7 +2,7 @@ use actix_web::{HttpResponse, web};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::telemetry::get_subscriber;
+//use crate::telemetry::get_subscriber;
 
 //Parameters 구조체는 유입 요청에서 보기를 기대하는 모든 쿼리 파라미터를 정의 
 //serde::Deserialize를 구현해서 actix_web이 유입 요청 결로로부터 구조체를 활성화하도록 해야 됨
