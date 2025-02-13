@@ -2,6 +2,7 @@ use actix_web::{web, HttpResponse};
 //더 이상 PgConnection을 임포트하지 않는다.
 use sqlx::{PgPool, Postgres, Transaction};
 use chrono::Utc;
+use tracing::Subscriber;
 //use tracing::Instrument;
 use uuid::Uuid;
 use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};
@@ -11,6 +12,11 @@ use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+//20250212 추가
+use actix_web::ResponseError;
+//20250213
+use actix_web::http::StatusCode;
+use anyhow::Context;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -46,33 +52,26 @@ pub async fn subscribe(
     email_client: web::Data<EmailClient>,
     //20250211 추가 - 도메인 전달 -> 도메인과 프로토콜은 애플리케이션이 실행되는 환경에 따라 다르기 때문에 새로 추가
     base_url: web::Data<ApplicationBaseUrl>
-) -> HttpResponse {
-    let new_subscriber = match form.0.try_into() {
-        Ok(form) => form,
-        Err(_) => return HttpResponse::BadRequest().finish()
-    };
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return HttpResponse::InternalServerError().finish()
-    };
-    let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
-        Ok(subscriber_id) => subscriber_id,
-        Err(_) => return HttpResponse::InternalServerError().finish()
-    };
+) -> Result<HttpResponse, SubscribeError> {
+    let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
+    let mut transaction = pool.begin()
+        .await
+        .context("Failed to acquire a Postgres connection from the pool")?;
+    let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
+        .await
+        .context("Failed to insert new subscriber in the database")?;
     let subscription_token = generate_subscription_token();
-    if store_token(&mut transaction, subscriber_id, &subscription_token).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
-    }
-    if transaction.commit().await.is_err() {
-        return HttpResponse::InternalServerError().finish();
-    }
-    //20250211 - 애플리케이션 url을 전달한다.
-    if send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
-    }
-    HttpResponse::Ok().finish()
-    
-    //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
+    store_token(&mut transaction, subscriber_id, &subscription_token)
+        .await
+        .context("Failed to store the confirmation token for a new subscriber")?;
+    transaction.commit()
+        .await
+        .context("Failed to commit SQL transaction to store a new subscriber")?;
+    send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token)
+        .await
+        .context("Failed to send a confirmation email")?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 //대소문자를 구분하는 무작위 25문자로 구성된 구독 토큰을 생성한다.
@@ -161,8 +160,72 @@ pub async fn store_token(
     .execute(transaction)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
+        //기본오류 감싸기 /20250212 수정
+        //StoreTokenError(e)
+        tracing::error!("Failed to execute query: {:?}]", e);
         e
     })?;
+    Ok(())
+}
+
+#[derive(thiserror::Error)]
+pub enum SubscribeError {
+    #[error("{0}")]
+    ValidationError(String),
+    //'Display' 와 'source'의 구현 모두를 'UnexpectError'로 감싼 타입에 투명하게 위임한다.
+    #[error(transparent)]
+    UnexpectError(#[from] anyhow::Error)
+}
+
+impl std::fmt::Debug for SubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for SubscribeError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            SubscribeError::UnexpectError(_) => StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+//새로운 에러 타입, sqlx::Error를 감싼다. 'Debug'를 활용한다. 쉽고 힘들지 않음
+pub struct StoreTokenError(sqlx::Error);
+
+impl std::error::Error for StoreTokenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+impl std::fmt::Debug for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl std::fmt::Display for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "A database error was encountered while \
+            trying to store a subscription token."
+        )
+    }
+}
+
+fn error_chain_fmt(
+    e: &impl std::error::Error,
+    f: &mut std::fmt::Formatter<'_>
+) -> std::fmt::Result {
+    writeln!(f, "{}\n", e)?;
+    let mut current = e.source();
+    while let Some(cause) = current {
+        writeln!(f, "Caused by:\n\t{}", cause)?;
+        current = cause.source();
+    }
     Ok(())
 }

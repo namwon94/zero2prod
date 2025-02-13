@@ -85,3 +85,40 @@ pub fn is_valid_name(s: &str) -> bool {
     !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
 }
 */
+
+//20250213 /routes/subscriptions / Error 트레이트 구현으로 인한 수정 전
+pub async fn subscribe(
+    form: web::Form<FormData>, 
+    pool: web::Data<PgPool>,
+    //20250206 추가 - 앱 콘테스트에서 이메일 클라이언트를 얻는다.
+    email_client: web::Data<EmailClient>,
+    //20250211 추가 - 도메인 전달 -> 도메인과 프로토콜은 애플리케이션이 실행되는 환경에 따라 다르기 때문에 새로 추가
+    base_url: web::Data<ApplicationBaseUrl>
+) -> HttpResponse {
+    let new_subscriber = match form.0.try_into() {
+        Ok(form) => form,
+        Err(_) => return HttpResponse::BadRequest().finish()
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return HttpResponse::InternalServerError().finish()
+    };
+    let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
+        Ok(subscriber_id) => subscriber_id,
+        Err(_) => return HttpResponse::InternalServerError().finish()
+    };
+    let subscription_token = generate_subscription_token();
+    if store_token(&mut transaction, subscriber_id, &subscription_token).await.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+    if transaction.commit().await.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+    //20250211 - 애플리케이션 url을 전달한다.
+    if send_confirmation_email(&email_client, new_subscriber, &base_url.0, &subscription_token).await.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+    HttpResponse::Ok().finish()
+    
+    //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
+}

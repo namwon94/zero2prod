@@ -1,5 +1,5 @@
 use crate::helpers::spawn_app;
-//202502026 추가
+//20250206 추가
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
@@ -142,4 +142,19 @@ async fn subscribe_sends_a_confirmation_email_with_a_link() {
 
     //두 링크는 동일해야 한다.
     assert_eq!(confirmation_links.html, confirmation_links.plain_text);
+}
+
+#[tokio::test]
+async fn subscribe_fails_if_there_is_a_fatal_database_error() {
+    //Arrange
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    //데이터베이스를 무시한다.
+    sqlx::query!("ALTER TABLE subscriptions DROP COLUMN email;")
+        .execute(&app.db_pool)
+        .await
+        .unwrap();
+
+    //Act
+    let response = app.post_subscriptions(body.into()).await;
 }
