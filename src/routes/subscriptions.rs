@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse};
 //더 이상 PgConnection을 임포트하지 않는다.
 use sqlx::{PgPool, Postgres, Transaction};
 use chrono::Utc;
-use tracing::Subscriber;
+//use tracing::Subscriber;
 //use tracing::Instrument;
 use uuid::Uuid;
 use crate::domain::{NewSubscriber, SubscriberName, SubscriberEmail};

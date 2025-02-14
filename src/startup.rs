@@ -2,9 +2,6 @@ use actix_web::dev::Server;
 //use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
 //use actix_web::middleware::Logger;
-use crate::routes::{
-    health_check, subscribe
-};
 use sqlx::PgPool;
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
@@ -12,8 +9,8 @@ use crate::email_client::EmailClient;
 use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
-//20250211 추가
-use crate::routes::confirm;
+//20250211 추가 -> 20250214 수정
+use crate::routes::{confirm, health_check, publish_newsletter, subscribe};
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -90,6 +87,8 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, ba
             .route("/subscriptions", web::post().to(subscribe))
             //confrim 요청에 대한 라우팅 테이블의 새 엔트리 포인트
             .route("/subscriptions/confirm", web::get().to(confirm))
+            //새로운 핸들러를 등록한다.
+            .route("/newsletters", web::post().to(publish_newsletter))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
