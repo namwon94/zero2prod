@@ -252,3 +252,7 @@ Mock에서 mount를 사용하면 우리가 지정한 동작이 'MockServer'가 �
 대신 mount_as_scoped를 사용하면 가드 객체인 'MockGuard'를 얻을 수 있음
 
 MockGuard : 커스텀 Drop 구현을 갖는다. 스코프를 벗어나면 wiremock은 기반 MockServer에게 지정된 mock의 동작을 멈추도록 명령한다.
+
+######20250217######
+context : Result의 오류 variant를 anyhow::Error로 변환하면서 콘텍스트 정보를 풍부하게 하기 위해 사용
+with_context : 게으르다 -> 클로저를 인수로 받는데 이 클로저는 오류가 발생할 경우에만 호출된다.

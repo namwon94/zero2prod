@@ -97,6 +97,18 @@ impl TestApp {
             plain_text
         }
     }
+    //20250217 추가 
+    pub async fn post_newsletters(
+        &self,
+        body: serde_json::Value
+    ) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(&format!("{}/newsletters", &self.address))
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
