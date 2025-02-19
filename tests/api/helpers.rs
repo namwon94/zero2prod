@@ -97,17 +97,28 @@ impl TestApp {
             plain_text
         }
     }
-    //20250217 추가 
+    //20250217 추가 -> 20250219 수정 (인증 관련된 내용 )
     pub async fn post_newsletters(
         &self,
         body: serde_json::Value
     ) -> reqwest::Response {
+        let (username, password) = self.test_user().await;
         reqwest::Client::new()
             .post(&format!("{}/newsletters", &self.address))
+            //무작위 크리덴셜 'reqwest'가 인코딩/포매팅 업무를 처리한다. -> 이제 무작위로 생성 안함 (test_user 매서드 생성)
+            .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+    //20250219 추가
+    pub async fn test_user(&self) -> (String, String) {
+        let row = sqlx::query!("SELECT username, password FROM users LIMIT 1")
+            .fetch_one(&self.db_pool)
+            .await
+            .expect("Failed to create test users.");
+        (row.username, row.password)
     }
 }
 
@@ -152,16 +163,31 @@ pub async fn spawn_app() -> TestApp {
     //let address = format!("http://127.0.0.1:{}", application.port());
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp {
+    //20250219 수정 / 10장 인증 / 아직 편집자들을 위한 가입 플로가 구현이 안되어 있으면 완전한 블랙 박스 접근 방식을 사용 -> 기존 내용 백업 텍스트 참조
+    let test_app = TestApp {
         //20250211 수정
         address: format!("http://localhost:{}", application_port),
         //20250211 추가
         port: application_port,
         db_pool: get_connection_pool(&configuration.database),
         email_server
-    }
-    //애플리케이션 주소를 호출자에게 반환한다.
-    //format!("http://127.0.0.1:{}", port)
+    };
+    add_test_user(&test_app.db_pool).await;
+    test_app
+}
+
+//20250219 추가
+async fn add_test_user(pool: &PgPool) {
+    sqlx::query!(
+        "INSERT INTO users ( user_id, username, password)
+        VALUES ($1, $2, $3)",
+        Uuid::new_v4(),
+        Uuid::new_v4().to_string(),
+        Uuid::new_v4().to_string()
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to create test users.");
 }
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {

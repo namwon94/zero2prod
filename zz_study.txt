@@ -92,6 +92,7 @@ PostgressSQL -> 관계형 데이터베이스
 마이그레이션 생성 하는 명령어
 export DATABASE_URL=postgres://postgrfes:password@127.0.0.1:5432/newsletter
 sqlx migrate add create_subscriptions_table
+SKIP_DOCKER=true ./scripts/init_db.sh
 
 #####20250121#####
 let mut #name# mut의 의미 : 변수가 가변임을 명시적으로 선언 -> rust에서 변수는 기본적으로 불변 이므로 변수가 가변으로 선언이 필요할 경우 mut를 사용한다.

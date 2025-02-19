@@ -57,6 +57,8 @@ reqwest = { version = "0.11", default-features = false, features = [
 rand = {version = "0.8", features=["std_rng"]}
 thiserror = "1"
 anyhow = "1"
+# Authentication을 위한 인코딩
+base64 = "0.13"
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 # docker build 시 cargo build를 도커 이미지 안에서 실행하면, sqlx는 .env 파일의 DATABASE_URL 환결 변수가 가리키는 데이터베이스와 커넥션을 만드는데 실패함 

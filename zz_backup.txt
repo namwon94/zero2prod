@@ -122,3 +122,13 @@ pub async fn subscribe(
     
     //(쓸모없는) 이메일을 신규 가입자에게 전송한다. 지금은 이메일 전송 오류는 무시한다.
 }
+
+20250219 수정 / 10장 인증 / 아직 편집자들을 위한 가입 플로가 구현이 안되어 있으면 완전한 블랙 박스 접근 방식을 사용
+TestApp {
+        //20250211 수정
+        address: format!("http://localhost:{}", application_port),
+        //20250211 추가
+        port: application_port,
+        db_pool: get_connection_pool(&configuration.database),
+        email_server
+    }
