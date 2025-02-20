@@ -59,6 +59,10 @@ thiserror = "1"
 anyhow = "1"
 # Authentication을 위한 인코딩
 base64 = "0.13"
+# 암호화해시 / RUST Crypto에서 SHA-3의 구현인 해당 크레이트를 제공
+sha3 = "0.9"
+# OWASP의 권고에 따라 sha3을 Argon2id로 치환에 필요한 크레이트
+argon2 = {version = "0.4", features = ["std"]}
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 # docker build 시 cargo build를 도커 이미지 안에서 실행하면, sqlx는 .env 파일의 DATABASE_URL 환결 변수가 가리키는 데이터베이스와 커넥션을 만드는데 실패함 

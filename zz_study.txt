@@ -244,7 +244,7 @@ Trait Object(트레이트 객체) : 타입에 관해 아무것도 알지 못한�
         -> Error 트레이트가 제공하는 메서드들(Debug, Display) 에서만 접근할 수 있음 
 
 anyhow::Error : 동적 오류 타입에 대한 래퍼 -> Box<dyn std::error::Error>와 상당히 유사하게 작동하지만 차이가 있음
-    -> anyhow::Error는 Send.Sync, 'static 오류를 요구
+    -> anyhow::Error는 ㅌSend.Sync, 'static 오류를 요구
        "는 기반 오류 타입이 백트레이스를 제공하지 않아도 백트레이스를 할 수 있음을 보장
        "는 좁은 포인터를 나타냄. 크기는 두개의 워드가 아니라 한 개의 워드
 
@@ -257,3 +257,8 @@ MockGuard : 커스텀 Drop 구현을 갖는다. 스코프를 벗어나면 wiremo
 ######20250217######
 context : Result의 오류 variant를 anyhow::Error로 변환하면서 콘텍스트 정보를 풍부하게 하기 위해 사용
 with_context : 게으르다 -> 클로저를 인수로 받는데 이 클로저는 오류가 발생할 경우에만 호출된다.
+
+######20250220######
+async와 await는 협력적 스켈줄링 이라 불리는 개념을 기반으로 구현되어짐
+
+await : 종종 항복점(yelled point)이라 불린다

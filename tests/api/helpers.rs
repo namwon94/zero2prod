@@ -14,6 +14,10 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 use zero2prod::startup::{Application, get_connection_pool};
 //20250206 추가 mock서버를 실행해서 Postmark의 API를 대신하게 하고 밖으로 전송되는 요청을 가로채야 됨.
 use wiremock::MockServer;
+//20250220 추가 비밀번호 저장 시 암호화 해시 작업으로 추가 sha3에서 argon2로 변경
+//use sha3::Digest;
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHasher};
 
 //'once_cell' 을 사용해서 'TRACING' 스택이 한 번만 초기화되는 것을 보장한다.
 static TRACING: Lazy<()> = Lazy::new(|| {
@@ -53,7 +57,9 @@ pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
     //20250206 추가
-    pub email_server: MockServer
+    pub email_server: MockServer,
+    //20250220 추가
+    test_user: TestUser
 }
 
 impl TestApp {
@@ -102,24 +108,25 @@ impl TestApp {
         &self,
         body: serde_json::Value
     ) -> reqwest::Response {
-        let (username, password) = self.test_user().await;
         reqwest::Client::new()
             .post(&format!("{}/newsletters", &self.address))
             //무작위 크리덴셜 'reqwest'가 인코딩/포매팅 업무를 처리한다. -> 이제 무작위로 생성 안함 (test_user 매서드 생성)
-            .basic_auth(username, Some(password))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute request.")
     }
-    //20250219 추가
+    //20250219 추가 -> 20250220 삭제 TestUser 구조체 생성
+    /* 
     pub async fn test_user(&self) -> (String, String) {
-        let row = sqlx::query!("SELECT username, password FROM users LIMIT 1")
+        let row = sqlx::query!("SELECT username, password_hash FROM users LIMIT 1")
             .fetch_one(&self.db_pool)
             .await
             .expect("Failed to create test users.");
-        (row.username, row.password)
+        (row.username, row.password_hash)
     }
+    */
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
@@ -170,16 +177,18 @@ pub async fn spawn_app() -> TestApp {
         //20250211 추가
         port: application_port,
         db_pool: get_connection_pool(&configuration.database),
-        email_server
+        email_server,
+        test_user: TestUser::generate()
     };
-    add_test_user(&test_app.db_pool).await;
+    test_app.test_user.store(&test_app.db_pool).await;
     test_app
 }
 
-//20250219 추가
+//20250219 추가 -> 20250220 삭제 TestUser 구조체 생성
+/* 
 async fn add_test_user(pool: &PgPool) {
     sqlx::query!(
-        "INSERT INTO users ( user_id, username, password)
+        "INSERT INTO users ( user_id, username, password_hash)
         VALUES ($1, $2, $3)",
         Uuid::new_v4(),
         Uuid::new_v4().to_string(),
@@ -188,6 +197,42 @@ async fn add_test_user(pool: &PgPool) {
     .execute(pool)
     .await
     .expect("Failed to create test users.");
+}
+*/
+//20250220 무작위 비밀번호 저장을 위한 구조체 생성
+pub struct TestUser {
+    pub user_id: Uuid,
+    pub username: String,
+    pub password: String
+}
+
+impl TestUser {
+    pub fn generate() -> Self {
+        Self {
+            user_id: Uuid::new_v4(),
+            username: Uuid::new_v4().to_string(),
+            password: Uuid::new_v4().to_string()
+        }
+    }
+
+    async fn store(&self, pool: &PgPool) {
+        let salt = SaltString::generate(&mut rand::thread_rng());
+        //정확한 Argon2 파라미터에 관해서는 신경쓰지 않는다. 이들은 테스팅 목적
+        let password_hash = Argon2::default()
+            .hash_password(self.password.as_bytes(), &salt)
+            .unwrap()
+            .to_string();
+        sqlx::query!(
+            "INSERT INTO users ( user_id, username, password_hash)
+            VALUES ($1, $2, $3)",
+            self.user_id,
+            self.username,
+            password_hash
+        )
+        .execute(pool)
+        .await
+        .expect("Faeild to store test user.");
+    }
 }
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {

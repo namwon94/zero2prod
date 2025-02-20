@@ -27,7 +27,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     let response = app.post_newsletters(newsletter_request_body).await;
 
     //Assert
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 200);
     //mock은 Drop, 즉 누스레터 이메일을 보내지 않았음을 검증한다.
 }
 
@@ -81,7 +81,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
     });
     let response = app.post_newsletters(newsletter_request_body).await;
     //Assert
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 200);
     //Mock은 뉴스레터 이메일을 보냈다는 Drop을 검증한다.
 }
 

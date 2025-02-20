@@ -1,6 +1,7 @@
 use actix_web::HttpResponse;
 use actix_web::web;
 use actix_web::ResponseError;
+//use sha3::Digest;
 use sqlx::PgPool;
 use actix_web::http::{StatusCode, header};
 use crate::email_client::EmailClient;
@@ -12,6 +13,8 @@ use secrecy::Secret;
 use secrecy::ExposeSecret;
 use actix_web::HttpRequest;
 use actix_web::http::header::{HeaderMap, HeaderValue};
+//20250220 추가
+use argon2::{Argon2, PasswordHash,PasswordVerifier};
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -80,75 +83,6 @@ pub async fn publish_newsletter(
     Ok(HttpResponse::Ok().finish())
 }
 
-struct ConfirmedSubscriber {
-    email: SubscriberEmail
-}
-
-//20250219 추가 / 10장 Authentication
-struct Credentials {
-    username: String,
-    password: Secret<String>
-}
-
-fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
-    //헤더값이 존재한다면 유효한 UTF8문자열이어야 한다.
-    let header_value = headers
-        .get("Authorization")
-        .context("The 'Authorization' header was missing")?
-        .to_str()
-        .context("The 'Authorization' header was not a valid UTF8 string")?;
-    let base64encoded_segment = header_value
-        .strip_prefix("Basic")
-        .context("The authorization scheme was not 'Basic'.")?;
-    let decoded_bytes = base64::decode_config(base64encoded_segment, base64::STANDARD)
-        .context("Failed to base64-decode 'Basic' credentials.")?;
-    let decoded_credentials = String::from_utf8(decoded_bytes)
-        .context("The decoded credential string is not valid UTF8.")?;
-
-    //':' 구분자를 사용해서 두 개의 세그먼트로 나눈다.
-    let mut credentials = decoded_credentials.splitn(2, ':');
-    let username = credentials
-        .next()
-        .ok_or_else(|| {
-            anyhow::anyhow!("A username must be provided in 'Basic' auth.")
-        })?
-        .to_string();
-    let password = credentials
-        .next()
-        .ok_or_else(|| {
-            anyhow::anyhow!("A password must be provided in 'Basic' auth.")
-        })?
-        .to_string();
-
-    Ok(Credentials {
-        username,
-        password: Secret::new(password)
-    })
-}
-
-async fn validate_credentials(
-    credentials: Credentials,
-    pool: &PgPool
-) -> Result<uuid::Uuid, PublishError> {
-    let user_id: Option<_> = sqlx::query!(
-        r#"
-        SELECT user_id
-        FROM users
-        WHERE username = $1 AND password = $2
-        "#,
-        credentials.username,
-        credentials.password.expose_secret()
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to perform a query to validate auth credentials.")
-    .map_err(PublishError::UnexpectError)?;
-
-    user_id .map(|row| row.user_id)
-        .ok_or_else(|| anyhow::anyhow!("Invalid username or password."))
-        .map_err(PublishError::AuthError)
-}
-
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool
@@ -178,6 +112,118 @@ async fn get_confirmed_subscribers(
         })
         .collect();
     Ok(confirmed_subscribers)
+}
+
+struct ConfirmedSubscriber {
+    email: SubscriberEmail
+}
+
+//20250219 추가 / 10장 Authentication
+struct Credentials {
+    username: String,
+    password: Secret<String>
+}
+
+fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
+    //헤더값이 존재한다면 유효한 UTF8문자열이어야 한다.
+    let header_value = headers
+        .get("Authorization")
+        .context("The 'Authorization' header was missing")?
+        .to_str()
+        .context("The 'Authorization' header was not a valid UTF8 string")?;
+    let base64encoded_segment = header_value
+        .strip_prefix("Basic ")
+        .context("The authorization scheme was not 'Basic'.")?;
+    let decoded_bytes = base64::decode_config(base64encoded_segment, base64::STANDARD)
+        .context("Failed to base64-decode 'Basic' credentials.")?;
+    let decoded_credentials = String::from_utf8(decoded_bytes)
+        .context("The decoded credential string is not valid UTF8.")?;
+
+    //':' 구분자를 사용해서 두 개의 세그먼트로 나눈다.
+    let mut credentials = decoded_credentials.splitn(2, ':');
+    let username = credentials
+        .next()
+        .ok_or_else(|| {
+            anyhow::anyhow!("A username must be provided in 'Basic' auth.")
+        })?
+        .to_string();
+    let password = credentials
+        .next()
+        .ok_or_else(|| {
+            anyhow::anyhow!("A password must be provided in 'Basic' auth.")
+        })?
+        .to_string();
+
+    Ok(Credentials {
+        username,
+        password: Secret::new(password)
+    })
+}
+
+#[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
+async fn validate_credentials(
+    credentials: Credentials,
+    pool: &PgPool
+) -> Result<uuid::Uuid, PublishError> {
+    let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pool).await
+        .map_err(PublishError::UnexpectError)?
+        .ok_or_else(|| {
+            PublishError::AuthError(anyhow::anyhow!("Unknown username."))
+        })?;
+
+    tokio::task::spawn_blocking(move || {
+        verify_password_hash(
+            expected_password_hash,
+            credentials.password
+        )
+    })
+    .await
+    .context("Failed to spawn blocking task.")
+    .map_err(PublishError::UnexpectError)??;
+     
+    Ok(user_id)
+}
+
+//db에 질의하는 로직을 해당 함수의 해당 span에서 추출
+#[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
+async fn get_stored_credentials(
+    username: &str,
+    pool: &PgPool
+) -> Result<Option<(uuid::Uuid, Secret<String>)>, anyhow::Error> {
+    let row: Option<_> = sqlx::query!(
+        r#"
+        SELECT user_id, password_hash
+        FROM users
+        WHERE username = $1
+        "#,
+        username
+    )
+    .fetch_optional(pool)
+    .await
+    .context("Failed to perform a query to retrieve stored credentials.")?
+    .map(|row| (row.user_id, Secret::new(row.password_hash)));
+
+    Ok(row)
+}
+
+#[tracing::instrument(
+    name = "Verify password hash",
+    skip(expected_password_hash)
+)]
+fn verify_password_hash(
+    expected_password_hash: Secret<String>,
+    password_cadidate: Secret<String>
+) -> Result<(), PublishError> {
+    let expected_password_hash = PasswordHash::new(
+        expected_password_hash.expose_secret()
+    )
+    .context("Failed to parse hash in PHC string format")
+    .map_err(PublishError::UnexpectError)?;
+
+    Argon2::default()
+        .verify_password(password_cadidate.expose_secret().as_bytes(), &expected_password_hash)
+        .context("Invalid password")
+        .map_err(PublishError::AuthError)
 }
 
 #[derive(thiserror::Error)]
