@@ -4,6 +4,8 @@ use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_log::LogTracer;
+//20250221 추가 / 10장 인증 파트
+use tokio::task::JoinHandle;
 
 //여러 레이어들을 하나의 tracing의 subscriber로 구성한다.
 //'impl Subscriber'를 반환 타입으로 사용해서 반환된 subscriber의 실제 타입에 관한 설명을 피한다(매우 복잡함)
@@ -43,4 +45,15 @@ pub fn init_subscriber(subscriber: impl Subscriber + Send + Sync) {
 
     //애플리케이션에서 'set_global_default'를 사용해서 span을 처리하기 위해 어떤 subscriber를 사용해야 하는지 지정할 수 있다.
     set_global_default(subscriber).expect("Failed to set subscriber");
+}
+
+//20250221 추가 / 'spawn_blocking'으로부터 트레이트 바운드와 시그니처를 복사했다.
+pub fn spawn_blocking_with_tracing<F, R>(f: F) -> JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static
+{
+    //이것이 실행된 뒤 새운 스레드를 실행한다. 그 뒤 스레드의 소유권을 클로저에 전달하고, 그 스코프 안에서 명시적으로 모든 계산을 실행한다
+    let current_span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || current_span.in_scope(f))
 }

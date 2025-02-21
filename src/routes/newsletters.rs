@@ -1,3 +1,5 @@
+use std::thread::current;
+
 use actix_web::HttpResponse;
 use actix_web::web;
 use actix_web::ResponseError;
@@ -15,6 +17,8 @@ use actix_web::HttpRequest;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 //20250220 추가
 use argon2::{Argon2, PasswordHash,PasswordVerifier};
+//20250221 추가
+use crate::telemetry::spawn_blocking_with_tracing;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -165,13 +169,25 @@ async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool
 ) -> Result<uuid::Uuid, PublishError> {
-    let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pool).await
-        .map_err(PublishError::UnexpectError)?
-        .ok_or_else(|| {
-            PublishError::AuthError(anyhow::anyhow!("Unknown username."))
-        })?;
+    // let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pool).await
+    //     .map_err(PublishError::UnexpectError)?
+    //     .ok_or_else(|| {
+    //         PublishError::AuthError(anyhow::anyhow!("Unknown username."))
+    //     })?;
+    let mut user_id = None;
+    let mut expected_password_hash = Secret::new(
+        "$argon2id$v=19$m=15000,t=2,p=1$\
+        gZiV/M1gPc22ElAH/Jh1Hw$\
+        CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
+            .to_string()
+    ); 
 
-    tokio::task::spawn_blocking(move || {
+    if let Some((stored_user_id, stored_password_hash)) = get_stored_credentials(&credentials.username, &pool).await.map_err(PublishError::UnexpectError)? {
+        user_id = Some(stored_user_id);
+        expected_password_hash = stored_password_hash;
+    }
+
+    spawn_blocking_with_tracing(move || {
         verify_password_hash(
             expected_password_hash,
             credentials.password
@@ -181,7 +197,11 @@ async fn validate_credentials(
     .context("Failed to spawn blocking task.")
     .map_err(PublishError::UnexpectError)??;
      
-    Ok(user_id)
+    //Ok(user_id)
+    //저장소에서 크리덴셜을 찾으면 'Some'으로만 설정된다. 따라서 기본 비밀번호가 제공된 비밀번호와 매칭하더라도 존재하지 않는 사용자는 인증하지 않는다. (이 시나리오에 대한 단위 테스트를 쉽게 추가할 수 있다.)
+    user_id.ok_or_else(||
+        PublishError::AuthError(anyhow::anyhow!("Unknown username."))
+    )
 }
 
 //db에 질의하는 로직을 해당 함수의 해당 span에서 추출

@@ -17,7 +17,7 @@ use wiremock::MockServer;
 //20250220 추가 비밀번호 저장 시 암호화 해시 작업으로 추가 sha3에서 argon2로 변경
 //use sha3::Digest;
 use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::{Argon2, PasswordHasher, Algorithm, Params, Version};
 
 //'once_cell' 을 사용해서 'TRACING' 스택이 한 번만 초기화되는 것을 보장한다.
 static TRACING: Lazy<()> = Lazy::new(|| {
@@ -59,7 +59,7 @@ pub struct TestApp {
     //20250206 추가
     pub email_server: MockServer,
     //20250220 추가
-    test_user: TestUser
+    pub test_user: TestUser
 }
 
 impl TestApp {
@@ -218,10 +218,16 @@ impl TestUser {
     async fn store(&self, pool: &PgPool) {
         let salt = SaltString::generate(&mut rand::thread_rng());
         //정확한 Argon2 파라미터에 관해서는 신경쓰지 않는다. 이들은 테스팅 목적
-        let password_hash = Argon2::default()
-            .hash_password(self.password.as_bytes(), &salt)
-            .unwrap()
-            .to_string();
+        //20250221 수정 / 기본 비밀번호의 파라미터를 매칭한다.
+        let password_hash = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(15000, 2, 1, None).unwrap()
+        )
+        .hash_password(self.password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+    
         sqlx::query!(
             "INSERT INTO users ( user_id, username, password_hash)
             VALUES ($1, $2, $3)",
