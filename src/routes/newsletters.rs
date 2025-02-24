@@ -1,5 +1,4 @@
-use std::thread::current;
-
+//use std::thread::current;
 use actix_web::HttpResponse;
 use actix_web::web;
 use actix_web::ResponseError;
@@ -12,13 +11,16 @@ use anyhow::Context;
 use crate::domain::SubscriberEmail;
 //20250219추가
 use secrecy::Secret;
-use secrecy::ExposeSecret;
+//use secrecy::ExposeSecret;
 use actix_web::HttpRequest;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 //20250220 추가
-use argon2::{Argon2, PasswordHash,PasswordVerifier};
+//use argon2::{Argon2, PasswordHash,PasswordVerifier};
 //20250221 추가
-use crate::telemetry::spawn_blocking_with_tracing;
+//use crate::telemetry::spawn_blocking_with_tracing;
+//20250224 추가
+use crate::authentication::{validate_credentials, AuthError, Credentials};
+use crate::routes::error_chain_fmt;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -80,7 +82,12 @@ pub async fn publish_newsletter(
         "username",
         &tracing::field::display(&credentials.username)
     );
-    let user_id = validate_credentials(credentials, &pool).await?;
+    //'AuthError'의 variant는 매핑했지만, 전체 오류는 'PublishError'의 variant의 생성자들에 전달한다. 이를 통해 미들웨어에 의해 오류가 기록될 때 톱 레벨 래퍼의 콘텍스트가 유지되도록 보장한다.
+    let user_id = validate_credentials(credentials, &pool).await
+        .map_err(|e| match e {
+            AuthError::InvalidCredentials(_) => PublishError::AuthError(e.into()),
+            AuthError::UnexpectError(_) => PublishError::UnexpectError(e.into())
+        })?;
     tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
 
 
@@ -122,12 +129,6 @@ struct ConfirmedSubscriber {
     email: SubscriberEmail
 }
 
-//20250219 추가 / 10장 Authentication
-struct Credentials {
-    username: String,
-    password: Secret<String>
-}
-
 fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     //헤더값이 존재한다면 유효한 UTF8문자열이어야 한다.
     let header_value = headers
@@ -162,88 +163,6 @@ fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Erro
         username,
         password: Secret::new(password)
     })
-}
-
-#[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
-async fn validate_credentials(
-    credentials: Credentials,
-    pool: &PgPool
-) -> Result<uuid::Uuid, PublishError> {
-    // let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pool).await
-    //     .map_err(PublishError::UnexpectError)?
-    //     .ok_or_else(|| {
-    //         PublishError::AuthError(anyhow::anyhow!("Unknown username."))
-    //     })?;
-    let mut user_id = None;
-    let mut expected_password_hash = Secret::new(
-        "$argon2id$v=19$m=15000,t=2,p=1$\
-        gZiV/M1gPc22ElAH/Jh1Hw$\
-        CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-            .to_string()
-    ); 
-
-    if let Some((stored_user_id, stored_password_hash)) = get_stored_credentials(&credentials.username, &pool).await.map_err(PublishError::UnexpectError)? {
-        user_id = Some(stored_user_id);
-        expected_password_hash = stored_password_hash;
-    }
-
-    spawn_blocking_with_tracing(move || {
-        verify_password_hash(
-            expected_password_hash,
-            credentials.password
-        )
-    })
-    .await
-    .context("Failed to spawn blocking task.")
-    .map_err(PublishError::UnexpectError)??;
-     
-    //Ok(user_id)
-    //저장소에서 크리덴셜을 찾으면 'Some'으로만 설정된다. 따라서 기본 비밀번호가 제공된 비밀번호와 매칭하더라도 존재하지 않는 사용자는 인증하지 않는다. (이 시나리오에 대한 단위 테스트를 쉽게 추가할 수 있다.)
-    user_id.ok_or_else(||
-        PublishError::AuthError(anyhow::anyhow!("Unknown username."))
-    )
-}
-
-//db에 질의하는 로직을 해당 함수의 해당 span에서 추출
-#[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
-async fn get_stored_credentials(
-    username: &str,
-    pool: &PgPool
-) -> Result<Option<(uuid::Uuid, Secret<String>)>, anyhow::Error> {
-    let row: Option<_> = sqlx::query!(
-        r#"
-        SELECT user_id, password_hash
-        FROM users
-        WHERE username = $1
-        "#,
-        username
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to perform a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, Secret::new(row.password_hash)));
-
-    Ok(row)
-}
-
-#[tracing::instrument(
-    name = "Verify password hash",
-    skip(expected_password_hash)
-)]
-fn verify_password_hash(
-    expected_password_hash: Secret<String>,
-    password_cadidate: Secret<String>
-) -> Result<(), PublishError> {
-    let expected_password_hash = PasswordHash::new(
-        expected_password_hash.expose_secret()
-    )
-    .context("Failed to parse hash in PHC string format")
-    .map_err(PublishError::UnexpectError)?;
-
-    Argon2::default()
-        .verify_password(password_cadidate.expose_secret().as_bytes(), &expected_password_hash)
-        .context("Invalid password")
-        .map_err(PublishError::AuthError)
 }
 
 #[derive(thiserror::Error)]
@@ -285,17 +204,4 @@ impl ResponseError for PublishError {
 
     //'status_code'는 기본 'error_response' 구현에 의해 호출된다.
     //맞춤형의 'error_response' 구현을 제공하므로, 'status_code' 구현을 더 이상 유지할 필요가 없다.
-}
-
-fn error_chain_fmt(
-    e: &impl std::error::Error,
-    f: &mut std::fmt::Formatter<'_>
-) -> std::fmt::Result {
-    writeln!(f, "{}\n", e)?;
-    let mut current = e.source();
-    while let Some(cause) = current {
-        writeln!(f, "Caused by:\n\t{}", cause)?;
-        current = cause.source();
-    }
-    Ok(())
 }

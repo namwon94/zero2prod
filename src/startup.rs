@@ -10,7 +10,9 @@ use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
 //20250211 추가 -> 20250214 수정
-use crate::routes::{confirm, health_check, publish_newsletter, subscribe};
+use crate::routes::{confirm, health_check, login, login_form, publish_newsletter, subscribe};
+//20250224 추가
+use crate::routes::home;
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -89,6 +91,12 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, ba
             .route("/subscriptions/confirm", web::get().to(confirm))
             //새로운 핸들러를 등록한다.
             .route("/newsletters", web::post().to(publish_newsletter))
+            //20250224 추가 -> 더미 홈 페이지 엔드 포인트
+            .route("/", web::get().to(home))
+            //20250224 추가 -> 로그인 폼 / get 방식
+            .route("/login", web::get().to(login_form))
+            //20250224 추가 -> 로그인 폼 / post 방식
+            .route("login", web::post().to(login))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
