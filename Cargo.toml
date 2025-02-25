@@ -65,6 +65,13 @@ sha3 = "0.9"
 argon2 = {version = "0.4", features = ["std"]}
 # 인증 오류 메시지 인코딩 -> 쿼리 파라미터는 URL의 일부 이므로 URL 인코딩을 해야됨
 urlencoding = "2"
+# HTML 엔티티 인코딩
+htmlescape = "0.3"
+# 메시지 인증 코드
+hmac = {version = "0.12", features = ["std"]}
+sha2 = "0.10"
+# login/get.rs에서 사용하는 태그 파라미터는 16진수 문자열로 인코딩된 바이트 슬라이스. 디코딩할려면 hex 크레이트가 필요
+hex = "0.4"
 
 # 테이블과 유사한 toml 구문을 사용해서 킨 코드 행을 줄이자
 # docker build 시 cargo build를 도커 이미지 안에서 실행하면, sqlx는 .env 파일의 DATABASE_URL 환결 변수가 가리키는 데이터베이스와 커넥션을 만드는데 실패함 

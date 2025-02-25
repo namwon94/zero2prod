@@ -18,7 +18,9 @@ pub struct ApplicationSettings {
     pub port: u16,
     pub host: String,
     //20250211 추가
-    pub base_url: String
+    pub base_url: String,
+    //20250225 추가 / HMAC이 사용한 시크릿을 애플리케이션 상테에 주입
+    pub hmac_secret: Secret<String>
 }
 
 #[derive(serde::Deserialize, Clone)]

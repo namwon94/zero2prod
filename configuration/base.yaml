@@ -1,5 +1,8 @@
 application:
   port: 8000
+  # You need set the 'APP_APPLICATION_HMAC_SECRET' environment variable on Digital Ocean as well for production
+  # 프로덕션을 위해서는 디지털오션에도 'APP_APPLCATION_HMAC_SECRET'을 설정해야 한다.
+  hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
 database:
   host: "localhost"
   port: "5432"

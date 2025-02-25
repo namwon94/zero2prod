@@ -127,6 +127,20 @@ impl TestApp {
         (row.username, row.password_hash)
     }
     */
+    pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize, {
+            reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap()
+                .post(&format!("{}/login", &self.address))
+                //이 'reqwest' 메서드는 바디가 URL인코딩되어 있으며 'Content-Type' 헤더가 그에 따라 설정되어 있음을 보장한다.
+                .form(body)
+                .send()
+                .await
+                .expect("Failed to execute request.")
+        }
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
@@ -262,4 +276,10 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to migrate the database");
 
     connection_pool
+}
+
+//작은 헬퍼 함수, 이번 창과 다음 창에서 이 확인을 여러 차례 수행한다.
+pub fn assert_is_redirect_to(response: &reqwest::Response, location: &str) {
+    assert_eq!(response.status().as_u16(), 303);
+    assert_eq!(response.headers().get("Location").unwrap(), location);
 }

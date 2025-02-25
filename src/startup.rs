@@ -13,6 +13,8 @@ use sqlx::postgres::PgPoolOptions;
 use crate::routes::{confirm, health_check, login, login_form, publish_newsletter, subscribe};
 //20250224 추가
 use crate::routes::home;
+//20250225 추가
+use secrecy::Secret;
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -41,7 +43,7 @@ impl Application {
         );
         let listener = TcpListener::bind(&address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client, configuration.application.base_url)?;
+        let server = run(listener, connection_pool, email_client, configuration.application.base_url, configuration.application.hmac_secret)?;
 
          //바운드된 포트를 'Application'의 필드 중 하나로 저장한다.
         Ok(Self{port, server})
@@ -68,7 +70,7 @@ pub fn get_connection_pool(
 //20250211 / 래퍼 타입을 정의해서 'subscribe' 핸들러에서 URL을 꺼낸다. acitx_web에서는 콘텍스트에서 꺼낸 값은 타입 기반 'String'을 사용하면 충돌이 발생
 pub struct ApplicationBaseUrl(pub String);
 
-pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, base_url: String) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, base_url: String, hmac_secret: Secret<String>) -> Result<Server, std::io::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
@@ -101,8 +103,12 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, ba
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
+            .app_data(web::Data::new(HmacSecret(hmac_secret.clone())))
     })
     .listen(listener)?
     .run();
     Ok(server)
 }
+
+#[derive(Clone)]
+pub struct HmacSecret(pub Secret<String>);
