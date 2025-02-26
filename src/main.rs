@@ -10,7 +10,7 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 */
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {      
+async fn main() -> anyhow::Result<()> {      
     let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
     init_subscriber(subscriber);
     // 구성을 읽을 수 없으면 패닉에 빠진다

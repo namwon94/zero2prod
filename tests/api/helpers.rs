@@ -59,12 +59,15 @@ pub struct TestApp {
     //20250206 추가
     pub email_server: MockServer,
     //20250220 추가
-    pub test_user: TestUser
+    pub test_user: TestUser,
+    //20250226 추가
+    pub api_client: reqwest::Client
 }
 
 impl TestApp {
+    //20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/subscriptions", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
@@ -103,12 +106,12 @@ impl TestApp {
             plain_text
         }
     }
-    //20250217 추가 -> 20250219 수정 (인증 관련된 내용 )
+    //20250217 추가 -> 20250219 수정 (인증 관련된 내용 ) / 20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
     pub async fn post_newsletters(
         &self,
         body: serde_json::Value
     ) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/newsletters", &self.address))
             //무작위 크리덴셜 'reqwest'가 인코딩/포매팅 업무를 처리한다. -> 이제 무작위로 생성 안함 (test_user 매서드 생성)
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
@@ -127,13 +130,11 @@ impl TestApp {
         (row.username, row.password_hash)
     }
     */
+    //20250225 추가 로그인 / 20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize, {
-            reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .unwrap()
+            self.api_client
                 .post(&format!("{}/login", &self.address))
                 //이 'reqwest' 메서드는 바디가 URL인코딩되어 있으며 'Content-Type' 헤더가 그에 따라 설정되어 있음을 보장한다.
                 .form(body)
@@ -141,6 +142,29 @@ impl TestApp {
                 .await
                 .expect("Failed to execute request.")
         }
+    //20250226 추가 / 테스트 케이스는 HTML페이지만 확인한다. 따라서 기반 reqwest::Response는 노출하지 않는다.
+    pub async fn get_login_html(&self) -> String {
+        self.api_client
+            .get(&format!("{}/login", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+            .text()
+            .await
+            .unwrap()
+    }
+    //20250226 추가 / 로그인 성공 시 /admin/dashboard로 이동
+    pub async fn get_admin_dashboard(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/admin/dashboard", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn get_admin_dashboard_html(&self) -> String {
+        self.get_admin_dashboard().await.text().await.unwrap()
+    }
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
@@ -184,6 +208,13 @@ pub async fn spawn_app() -> TestApp {
     //let address = format!("http://127.0.0.1:{}", application.port());
     let _ = tokio::spawn(application.run_until_stopped());
 
+    //20250226 추가 / 하나의 reqwest::Client를 생성하고 저장
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .cookie_store(true)
+        .build()
+        .unwrap();
+
     //20250219 수정 / 10장 인증 / 아직 편집자들을 위한 가입 플로가 구현이 안되어 있으면 완전한 블랙 박스 접근 방식을 사용 -> 기존 내용 백업 텍스트 참조
     let test_app = TestApp {
         //20250211 수정
@@ -192,7 +223,10 @@ pub async fn spawn_app() -> TestApp {
         port: application_port,
         db_pool: get_connection_pool(&configuration.database),
         email_server,
-        test_user: TestUser::generate()
+        //20250220 추가
+        test_user: TestUser::generate(),
+        //20250226 추가
+        api_client: client
     };
     test_app.test_user.store(&test_app.db_pool).await;
     test_app

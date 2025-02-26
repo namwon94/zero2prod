@@ -12,7 +12,11 @@ use crate::routes::error_chain_fmt;
 //use hmac::{Hmac, Mac};
 //use secrecy::ExposeSecret;
 //use crate::startup::HmacSecret;
-use actix_web::cookie::Cookie;
+//use actix_web::cookie::Cookie;
+//20250226 추가
+use actix_web_flash_messages::FlashMessage;
+//use actix_session::Session;
+use crate::session_state::TypedSession;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -21,7 +25,7 @@ pub struct FormData {
 }
 
 #[tracing::instrument(
-    skip(form, pool),
+    skip(form, pool, session),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 //Pgpool을 주입해서 데이터베이스로부터 저장된 크리덴셜을 꺼낸다.
@@ -30,6 +34,8 @@ pub async fn login(
     pool: web::Data<PgPool>,
     //일시적으로 시크릿을 시크릿 문자열로 주입한다. -> 래퍼 타입을 주입한다. / secret: web::Data<Secret<String>> 에서 변경 -> 'HmacSecret'는 더 이상 필요하지 않는다.
     //secret: web::Data<HmacSecret>
+    //Session -> TypedSession으로 변경
+    session: TypedSession
 ) -> Result<HttpResponse, InternalError<LoginError>> {
     let credentials = Credentials {
         username: form.0.username,
@@ -40,13 +46,17 @@ pub async fn login(
     match validate_credentials(credentials, &pool).await {
         Ok(user_id) => {
             tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
-            Ok(HttpResponse::SeeOther().insert_header((LOCATION, "/")).finish())
+            session.renew();
+            session.insert_user_id(user_id)
+                .map_err(|e| login_redirect(LoginError::UnexpectError(e.into())))?;
+            Ok(HttpResponse::SeeOther().insert_header((LOCATION, "/admin/dashboard")).finish())
         }
         Err(e) => {
             let e = match e {
                 AuthError::InvalidCredentials(_) => LoginError::AuthError(e.into()),
                 AuthError::UnexpectError(_) => { LoginError::UnexpectError(e.into()) }
             };
+            Err(login_redirect(e))
             /* 엔드포인트에서 쿼리 파라미터를 사용해서 오류 메시지를 전달하는 기능을 제거 
             let query_string = format!("error={}", urlencoding::Encoded::new(e.to_string()));
             let hmac_tag = {
@@ -56,13 +66,12 @@ pub async fn login(
             };
             let response = HttpResponse::SeeOther().insert_header((LOCATION, format!("/login?{}&tag={:x}", query_string, hmac_tag))).finish();
             */
-            let response = HttpResponse::SeeOther()
-                .insert_header((LOCATION, "/login"))
-                //.cookie 사용
-                //.insert_header(("Set-Cookie", format!("_flash={e}")))
-                .cookie(Cookie::new("_flash", e.to_string()))
-                .finish();
-            Err(InternalError::from_response(e, response))
+            // let response = HttpResponse::SeeOther()
+            //     .insert_header((LOCATION, "/login"))
+            //     //이제 쿠키가 없다.
+            //     //.cookie(Cookie::new("_flash", e.to_string()))
+            //     .finish();
+            // Err(InternalError::from_response(e, response))
         }
     }
 }
@@ -81,19 +90,12 @@ impl std::fmt::Debug for LoginError {
     }
 }
 
-// impl ResponseError for LoginError {
-//     fn error_response(&self) -> HttpResponse {
-//         let query_string = format!("error={}", urlencoding::Encoded::new(self.to_string()));
-//         //여기에서 시크릭이 필요하다. 어떻게 얻어야 하는가
-//         let hmac_tag = {
-//             let secret: &[u8] = todo!();
-//             let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret).unwrap();
-//             mac.update(query_string.as_bytes());
-//             mac.finalize().into_bytes()
-//         };
-//         HttpResponse::build(self.status_code()).insert_header((LOCATION, format!("/login?{query_string}&tag={hmac_tag:x}"))).finish()
-//     }
-//     fn status_code(&self) -> StatusCode {
-//         StatusCode::SEE_OTHER
-//     }
-// }
+//오류 메시지와 함께 login 페이지로 리다이렉트한다.
+fn login_redirect(e: LoginError) -> InternalError<LoginError> {
+    FlashMessage::error(e.to_string()).send();
+    let response = HttpResponse::SeeOther()
+        .insert_header((LOCATION, "/login"))
+        .finish();
+
+    InternalError::from_response(e, response)
+}

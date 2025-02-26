@@ -9,7 +9,9 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     //20250204 새 필드 추가
-    pub email_client: EmailClientSettings
+    pub email_client: EmailClientSettings,
+    //20250226 새 필드 추가 / 레디스를 위한 독립적인 설정 구조체를 만들지 않음. 우선 uri 이상의 무건가 필요한지 확인 uri는 비밀번호를 포함할 수 있으므로 시크릿으로 표시한다.
+    pub redis_uri: Secret<String>
 }
 
 #[derive(serde::Deserialize, Clone)]

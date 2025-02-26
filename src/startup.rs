@@ -1,6 +1,8 @@
+use actix_session::storage::RedisSessionStore;
 use actix_web::dev::Server;
 //use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
+use actix_web_flash_messages::storage::CookieMessageStore;
 //use actix_web::middleware::Logger;
 use sqlx::PgPool;
 use std::net::TcpListener;
@@ -10,11 +12,16 @@ use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
 //20250211 추가 -> 20250214 수정
-use crate::routes::{confirm, health_check, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{confirm, health_check, login, login_form, publish_newsletter, subscribe, admin_dashboard};
 //20250224 추가
 use crate::routes::home;
 //20250225 추가
 use secrecy::Secret;
+//20250226 추가
+use actix_web_flash_messages::FlashMessagesFramework;
+use secrecy::ExposeSecret;
+use actix_web::cookie::Key;
+use actix_session::SessionMiddleware;
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -23,7 +30,8 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(configuration: Settings) -> Result<Self, std::io::Error> {
+    //비동기이다. 또한 std::io::Error 대신 anyhow::Error를 반환한다.
+    pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         //'build' 함수를 'Application'에 대한 생성자로 변환했다
         let connection_pool = get_connection_pool(&configuration.database);
         let sender_email = configuration
@@ -43,7 +51,10 @@ impl Application {
         );
         let listener = TcpListener::bind(&address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client, configuration.application.base_url, configuration.application.hmac_secret)?;
+        let server = run(
+            listener, connection_pool, email_client, configuration.application.base_url, 
+            configuration.application.hmac_secret, configuration.redis_uri
+        ).await?;
 
          //바운드된 포트를 'Application'의 필드 중 하나로 저장한다.
         Ok(Self{port, server})
@@ -69,12 +80,20 @@ pub fn get_connection_pool(
 
 //20250211 / 래퍼 타입을 정의해서 'subscribe' 핸들러에서 URL을 꺼낸다. acitx_web에서는 콘텍스트에서 꺼낸 값은 타입 기반 'String'을 사용하면 충돌이 발생
 pub struct ApplicationBaseUrl(pub String);
-
-pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, base_url: String, hmac_secret: Secret<String>) -> Result<Server, std::io::Error> {
+//20250226 수정 / 비동기로 변경
+async fn run(
+    listener: TcpListener, db_pool: PgPool, email_client: EmailClient, 
+    base_url: String, hmac_secret: Secret<String>, redis_uri: Secret<String>
+) -> Result<Server, anyhow::Error> {
     //web::Data로 pool을 감싼다. Arc 스마트 포인터로 요약된다.
     let db_pool = web::Data::new(db_pool);
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
+    //20250226 추가 / 플래시 메시지를 조작하기 위해 미들웨어로 등록해야됨
+    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
+    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
+    let message_framework = FlashMessagesFramework::builder(message_store).build();
+    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
     /*
         move의 의미 
             : 소유권 이전 -> move 키워드는 클로저가 캡처하는 외부 변수들의 소유권을 클로저 내부로 이전시킵니다
@@ -84,6 +103,10 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, ba
      */
     let server = HttpServer::new(move || {
         App::new()
+            //플래시 메시지 조작을 위한 미들웨어 추가
+            .wrap(message_framework.clone())
+            //세션 관리기능 미들웨어 추가
+            .wrap(SessionMiddleware::new(redis_store.clone(), secret_key.clone()))
             //'App'에 대해 'wrap'메서드를 사용해서 미들웨어들을 추가한다.
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
@@ -99,6 +122,8 @@ pub fn run(listener: TcpListener, db_pool: PgPool, email_client: EmailClient, ba
             .route("/login", web::get().to(login_form))
             //20250224 추가 -> 로그인 폼 / post 방식
             .route("login", web::post().to(login))
+            //20250226 추가 -> admin dashboard 엔트리 포인트 추가
+            .route("/admin/dashboard", web::get().to(admin_dashboard))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())

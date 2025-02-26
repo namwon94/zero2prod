@@ -15,3 +15,5 @@ email_client:
   # 개발 관련 토큰만 설정한다. 프로덕션 토큰은 버전 관리 도구 밖에서 관리한다.
   authorization_token: "my-secret-token"
   timeout_milliseconds: 10000
+# 6379는 레디스의 기본포트
+redis_uri: "redis://127.0.0.1:6379"
