@@ -12,7 +12,7 @@ use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
 //20250211 추가 -> 20250214 수정
-use crate::routes::{confirm, health_check, login, login_form, publish_newsletter, subscribe, admin_dashboard};
+use crate::routes::{admin_dashboard, chang_password, change_passwor_form, confirm, health_check, login, login_form, publish_newsletter, subscribe};
 //20250224 추가
 use crate::routes::home;
 //20250225 추가
@@ -118,12 +118,16 @@ async fn run(
             .route("/newsletters", web::post().to(publish_newsletter))
             //20250224 추가 -> 더미 홈 페이지 엔드 포인트
             .route("/", web::get().to(home))
-            //20250224 추가 -> 로그인 폼 / get 방식
+            //20250224 추가 -> 로그인 폼 / get
             .route("/login", web::get().to(login_form))
-            //20250224 추가 -> 로그인 폼 / post 방식
-            .route("login", web::post().to(login))
-            //20250226 추가 -> admin dashboard 엔트리 포인트 추가
+            //20250224 추가 -> 로그인 폼 / post
+            .route("/login", web::post().to(login))
+            //20250226 추가 -> admin/dashboard 엔트리 포인트 추가
             .route("/admin/dashboard", web::get().to(admin_dashboard))
+            //20250228 추가 -> admin/password 비밀번호 변경 폼 / get
+            .route("/admin/password", web::get().to(change_passwor_form))
+            //20250228 추가 -> admin/password 비밀번호 변경 폼 / post
+            .route("/admin/password", web::post().to(chang_password))
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())

@@ -4,6 +4,7 @@ use uuid::Uuid;
 use anyhow::Context;
 use sqlx::PgPool;
 use crate::session_state::TypedSession;
+use crate::utils::e500;
 
 
 pub async fn admin_dashboard(
@@ -11,9 +12,13 @@ pub async fn admin_dashboard(
     session: TypedSession,
     pool: web::Data<PgPool>
 ) -> Result<HttpResponse, actix_web::Error> {
+    // 잠시 대기하여 비동기 저장 완료 기다리기
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let username = if let Some(user_id) = session.get_user_id().map_err(e500)? {
+        //println!("session.get_user_id() : {:?}", session.get_user_id());
         get_username(user_id, &pool).await.map_err(e500)?
     }else {
+        //println!("session.get_user_id() : {:?}", session.get_user_id());
         return Ok(HttpResponse::SeeOther().insert_header((LOCATION, "/login")).finish());
     };
     Ok(HttpResponse::Ok()
@@ -24,10 +29,14 @@ pub async fn admin_dashboard(
             <html lang="en">
                 <head>
                     <meta http-equiv="content-type" content="text/html"; charset="utf-8">
-                    <title>Login</title>
+                    <title>Admin Dashboard</title>
                 </head>
                 <body>
                     <p>Welcome {username}</p>
+                    <p>Available actions:</p>
+                    <ol>
+                        <li><a href="/admin/password">Change password</a></li>
+                    </ol>
                 </body>
             </html>
             "#
@@ -35,7 +44,7 @@ pub async fn admin_dashboard(
 }
 
 #[tracing::instrument(name = "Get username", skip(pool))]
-async fn get_username(
+pub async fn get_username(
     user_id: Uuid,
     pool: &PgPool
 ) -> Result<String, anyhow::Error> {
@@ -52,10 +61,3 @@ async fn get_username(
     .context("Failed to perform a query to retrieve a username")?;
     Ok(row.username)
 }
-
-//로깅을 위해 오류의 근본 원인은 유지한면서 불투명한 500을 반환한다.
-fn e500<T>(e: T) -> actix_web::Error
-where
-    T: std::fmt::Debug + std::fmt::Display + 'static {
-        actix_web::error::ErrorInternalServerError(e)
-    }

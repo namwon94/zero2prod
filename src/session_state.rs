@@ -17,7 +17,7 @@ impl TypedSession {
         self.0.insert(Self::USER_ID_KEY, user_id)
     }
 
-    pub fn get_user_id(&self) ->Result<Option<Uuid>, serde_json::Error> {
+    pub fn get_user_id(&self) -> Result<Option<Uuid>, serde_json::Error> {
         self.0.get(Self::USER_ID_KEY)
     }
 }
