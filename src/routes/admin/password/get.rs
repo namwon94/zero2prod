@@ -5,7 +5,7 @@ use std::fmt::Write;
 use crate::session_state::TypedSession;
 use crate::utils::{e500, see_other};
 
-pub async fn change_passwor_form(
+pub async fn change_password_form(
     session: TypedSession,
     flash_messages: IncomingFlashMessages
 ) -> Result<HttpResponse, actix_web::Error> {

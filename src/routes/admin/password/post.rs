@@ -1,7 +1,7 @@
 use actix_web::{HttpResponse, web};
 use actix_web_flash_messages::FlashMessage;
 use secrecy::{ExposeSecret, Secret};
-use serde::de::value;
+//use serde::de::value;
 use crate::session_state::TypedSession;
 use crate::utils::{e500, see_other};
 use crate::routes::admin::dashboard::get_username;
@@ -48,5 +48,7 @@ pub async fn chang_password(
             AuthError::UnexpectError(_) => Err(e500(e).into())
         }
     }
-    todo!()
+    crate::authentication::change_password(user_id, form.0.new_password, &pool).await.map_err(e500)?;
+    FlashMessage::error("Your password has been changed.").send();
+    Ok(see_other("/admin/password"))
 }

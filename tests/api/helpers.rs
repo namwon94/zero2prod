@@ -191,6 +191,15 @@ impl TestApp {
                 .await
                 .expect("Failed to execute request")
         }
+
+    //20250301 추가 / 로그아웃
+    pub async fn post_logout(&self) ->reqwest::Response {
+        self.api_client
+            .post(&format!("{}/admin/logout", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
