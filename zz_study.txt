@@ -282,8 +282,12 @@ include_str! : 컴파일 시 동작
 Session:insert 하는일 : Session에 대해 수핸하는 모든 작업은 메모리 안에서 실행. 스토리지 백엔드에서 보는 세션의 상테에 아무런 영향을 미치지 않는다.
     -> 핸들러가 응답을 반환한 뒤, SessionMiddleware는 Session의 인 메모리 상태롤 조사 -> 상태가 바뀌었다면 레디스를 호출해서 상태를 업데이트(또는 생성) 한다. 클라이언트의 세션 쿠키도 설정함.
 
-######20250227#######
-ddf8994f-d522-4659-8d02-c1d479057be6
+######20250302#######
+actix_web_lab::from_fn : 빠른 릴리스 정책으로 actix_web_framework의 추가 기능을 실험적으로 사용할 수 있는 크레이트
+     -> form_fn은 비동기 함수를 인자로 받고 actix_web 미들웨어를 출력으로 반환
 
+
+
+ddf8994f-d522-4659-8d02-c1d479057be6
 admin
 everythinghastostartsomewhere

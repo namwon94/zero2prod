@@ -12,7 +12,7 @@ use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
 //20250211 추가 -> 20250214 수정
-use crate::routes::{admin_dashboard, chang_password, change_password_form, confirm, health_check, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{admin_dashboard, change_password, change_password_form, confirm, health_check, login, login_form, publish_newsletter, subscribe};
 //20250224 추가
 use crate::routes::home;
 //20250225 추가
@@ -24,6 +24,9 @@ use actix_web::cookie::Key;
 use actix_session::SessionMiddleware;
 //20250301 추가
 use crate::routes::log_out;
+//20250302 추가
+use crate::authentication::reject_anonymous_users;
+use actix_web_lab::middleware::from_fn;
 
 //새롭게 만들어진 서버와 그 포트를 갖는 새로운 타입
 pub struct Application {
@@ -124,14 +127,21 @@ async fn run(
             .route("/login", web::get().to(login_form))
             //20250224 추가 -> 로그인 폼 / post
             .route("/login", web::post().to(login))
-            //20250226 추가 -> admin/dashboard 엔트리 포인트 추가
-            .route("/admin/dashboard", web::get().to(admin_dashboard))
-            //20250228 추가 -> admin/password 비밀번호 변경 폼 / get
-            .route("/admin/password", web::get().to(change_password_form))
-            //20250228 추가 -> admin/password 비밀번호 변경 폼 / post
-            .route("/admin/password", web::post().to(chang_password))
-            //20250301 추가 -> admin/logout 로그아웃 엔트리 포인트 추가
-            .route("/admin/logout", web::post().to(log_out))
+            //20250302 수정
+            //미들웨어 로직을 /admin/* 엔드포인트에만 배타적으로 적용하기를 원하지만 App에서 wrap을 호출하면 미들웨어를 모든 경로에 적용하게 된다.
+            //대상으로 엔드포인트들이 모두 같은 기본 경로를 갖는다는 점을 고려하면, 스코프르르 사용해서 원하는 바를 달성할 수 있다.
+            .service(
+                web::scope("/admin")
+                    .wrap(from_fn(reject_anonymous_users))
+                    //20250226 추가 -> admin/dashboard 엔트리 포인트 추가
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    //20250228 추가 -> admin/password 비밀번호 변경 폼 / get
+                    .route("/password", web::get().to(change_password_form))
+                    //20250228 추가 -> admin/password 비밀번호 변경 폼 / post
+                    .route("/password", web::post().to(change_password))
+                    //20250301 추가 -> admin/logout 로그아웃 엔트리 포인트 추가
+                    .route("/logout", web::post().to(log_out))
+            )
             //커넥션을 애플리케이션 상테의 일부로 등록한다.
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
