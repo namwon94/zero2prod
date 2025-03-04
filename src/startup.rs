@@ -12,7 +12,10 @@ use crate::configuration::Settings;
 use crate::configuration::DatabaseSettings;
 use sqlx::postgres::PgPoolOptions;
 //20250211 추가 -> 20250214 수정
-use crate::routes::{admin_dashboard, change_password, change_password_form, confirm, health_check, login, login_form, publish_newsletter, subscribe};
+use crate::routes::{
+    admin_dashboard, change_password, change_password_form, confirm, health_check, 
+    login, login_form, publish_newsletter, publish_newsletter_form, subscribe
+};
 //20250224 추가
 use crate::routes::home;
 //20250225 추가
@@ -119,8 +122,6 @@ async fn run(
             .route("/subscriptions", web::post().to(subscribe))
             //confrim 요청에 대한 라우팅 테이블의 새 엔트리 포인트
             .route("/subscriptions/confirm", web::get().to(confirm))
-            //새로운 핸들러를 등록한다.
-            .route("/newsletters", web::post().to(publish_newsletter))
             //20250224 추가 -> 더미 홈 페이지 엔드 포인트
             .route("/", web::get().to(home))
             //20250224 추가 -> 로그인 폼 / get
@@ -135,6 +136,9 @@ async fn run(
                     .wrap(from_fn(reject_anonymous_users))
                     //20250226 추가 -> admin/dashboard 엔트리 포인트 추가
                     .route("/dashboard", web::get().to(admin_dashboard))
+                    //새로운 핸들러를 등록한다.
+                    .route("/newsletters", web::post().to(publish_newsletter_form))
+                    .route("/newsletters", web::post().to(publish_newsletter))
                     //20250228 추가 -> admin/password 비밀번호 변경 폼 / get
                     .route("/password", web::get().to(change_password_form))
                     //20250228 추가 -> admin/password 비밀번호 변경 폼 / post
