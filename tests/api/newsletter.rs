@@ -1,39 +1,9 @@
-use crate::helpers::{spawn_app, TestApp, ConfirmationLinks};
+use crate::helpers::{spawn_app, TestApp, ConfirmationLinks, assert_is_redirect_to};
 use wiremock::matchers::{any, method, path};
 use wiremock::{Mock, ResponseTemplate};
 //20250221 추가
-use uuid::Uuid;
+//use uuid::Uuid;
 
-#[tokio::test]
-async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
-    //Arrange
-    let app = spawn_app().await;
-    create_unconfirmed_subscriber(&app).await;
-
-    Mock::given(any())
-        .respond_with(ResponseTemplate::new(200))
-        //Postmark에 대한 여청이 없음을 어서트한다.
-        .expect(0)
-        .mount(&app.email_server)
-        .await;
-
-    //Act
-    //뉴스레터 페이로드의 스켈레톤 구조
-    let newsletter_request_body = serde_json::json!({
-        "title": "Newsletter title",
-        "content": {
-            "text": "Newsletter body as plain text",
-            "html": "<p>Newsletter body as HTML</p>"
-        }
-    });
-    let response = app.post_newsletters(newsletter_request_body).await;
-
-    //Assert
-    assert_eq!(response.status().as_u16(), 200);
-    //mock은 Drop, 즉 누스레터 이메일을 보내지 않았음을 검증한다.
-}
-
-//테스트 대상 애플리케이션의 퍼블릭 API를 사용해서 확인되지 않은 구독자를 생성한다.
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
 
@@ -48,23 +18,61 @@ async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
         .await
         .error_for_status()
         .unwrap();
-    //mock Postmark 서버가 받은 요청을 확인해서 확인 링크르르 추출하고 그것을 반환한다.
-    let email_request = &app.email_server.received_requests().await.unwrap().pop().unwrap();
-    app.get_confirmation_links(&email_request)
+
+    let email_request = &app
+        .email_server
+        .received_requests()
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    app.get_confirmation_links(email_request)
 }
 
 async fn create_confirmed_subscriber(app: &TestApp) {
-    //동일한 헬퍼를 재사용해서 해당 확인 링크를 실제로 호출하는 단계를 추가한다.
-    let confirmation_link = create_unconfirmed_subscriber(app).await;
-    reqwest::get(confirmation_link.html).await.unwrap().error_for_status().unwrap();
+    let confirmation_link = create_unconfirmed_subscriber(app).await.html;
+    reqwest::get(confirmation_link)
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
 }
 
+#[tokio::test]
+async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
+    // Arrange
+    let app = spawn_app().await;
+    create_unconfirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    Mock::given(any())
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&app.email_server)
+        .await;
+
+    // Act - Part 1 - Submit newsletter form
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    // Act - Part 2 - Follow the redirect
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    // Mock verifies on Drop that we haven't sent the newsletter email
+}
 
 #[tokio::test]
 async fn newsletters_are_delivered_to_confirmed_subscribers() {
-    //Arrange
+    // Arrange
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
 
     Mock::given(path("/email"))
         .and(method("POST"))
@@ -73,132 +81,91 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    //Act
+    // Act - Part 1 - Submit newsletter form
     let newsletter_request_body = serde_json::json!({
         "title": "Newsletter title",
-        "content": {
-            "text": "Newsletter body as plain text",
-            "html": "<p>Newsletter body as HTML</p>"
-        }
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
     });
-    let response = app.post_newsletters(newsletter_request_body).await;
-    //Assert
-    assert_eq!(response.status().as_u16(), 200);
-    //Mock은 뉴스레터 이메일을 보냈다는 Drop을 검증한다.
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    // Act - Part 2 - Follow the redirect
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    // Mock verifies on Drop that we have sent the newsletter email
 }
 
 #[tokio::test]
-async fn newsletters_return_400_for_invalid_data() {
-    //Arrange
+async fn you_must_be_logged_in_to_see_the_newsletter_form() {
+    // Arrange
     let app = spawn_app().await;
-    let test_cases = vec![
-        (
-            serde_json::json!({
-                "content": {
-                    "text": "Newsletter body as plain text",
-                    "html": "<p>Newsletter body as HTML</p>"
-                }
-            }),
-            "missing titme"
-        ),
-        (
-            serde_json::json!({"title": "Newsletter!"}),
-            "missing content"
-        )
-    ];
 
-    for(invalid_body, error_message) in test_cases {
-        let response = app.post_newsletters(invalid_body).await;
+    // Act
+    let response = app.get_publish_newsletter().await;
 
-        //Assert
-        assert_eq!(
-            400,
-            response.status().as_u16(),
-            "The API did not fail with 400 Bad Request when the payload was {}.",
-            error_message
-        );
-    }
+    // Assert
+    assert_is_redirect_to(&response, "/login");
 }
 
 #[tokio::test]
-async fn requests_missing_authorization_are_rejected() {
-    //Arrange
+async fn you_must_be_logged_in_to_publish_a_newsletter() {
+    // Arrange
     let app = spawn_app().await;
 
-    let response = reqwest::Client::new()
-        .post(&format!("{}/newsletters", &app.address))
-        .json(&serde_json::json!({
-            "title": "Newsletter title",
-            "content": {
-                "text": "Newsletter body as plain text",
-                "html": "<p>Newsletter body as HTML</p>"
-            }
-        }))
-        .send()
-        .await.expect("Failed to execute request.");
+    // Act
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
 
-    //Assert
-    assert_eq!(401, response.status().as_u16());
-    assert_eq!(r#"Basic realm="publish""#, response.headers()["WWW-Authenticate"]);
+    // Assert
+    assert_is_redirect_to(&response, "/login");
 }
 
 #[tokio::test]
-async fn non_existing_user_is_rejected() {
+async fn newsletter_creation_is_idempotent(){
     //Arrange
     let app = spawn_app().await;
-    //무작위 크리덴션
-    let username = Uuid::new_v4().to_string();
-    let password = Uuid::new_v4().to_string();
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
 
-    let response = reqwest::Client::new()
-        .post(&format!("{}/newsletters", &app.address))
-        .basic_auth(username, Some(password))
-        .json(&serde_json::json!({
-            "title": "Newsletter title",
-            "content": {
-                "text": "Newsletter body as plain text",
-                "html": "<p>Newsletter body as HTML</p>"
-            }
-        }))
-        .send()
-        .await
-        .expect("Faild to execute request.");
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
 
-    //Assert
-    assert_eq!(401, response.status().as_u16());
-    assert_eq!(
-        r#"Basic realm="publish""#,
-        response.headers()["WWW-Authenticate"]
+    //Act - Part 1 - 뉴스레터 폼을 제출한다.
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        //헤더가 아니라 폼 데이터의 일부로서 멱등성 키를 기대한다.
+        "idempotexcy_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    //Act - Part 2 - 리다이렉트를 따른다.
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
     );
-}
 
-#[tokio::test]
-async fn invalid_passowrd_is_rejected() {
-    //Arrange
-    let app = spawn_app().await;
-    let username = &app.test_user.username;
-    //무작위 크리덴션
-    let password = Uuid::new_v4().to_string();
-    assert_ne!(app.test_user.password, password);
+    //Act - Part 3 - 뉴스레터 폼을 다시 제출한다.
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
 
-    let response = reqwest::Client::new()
-        .post(&format!("{}/newsletters", &app.address))
-        .basic_auth(username, Some(password))
-        .json(&serde_json::json!({
-            "title": "Newsletter title",
-            "content": {
-                "text": "Newsletter body as plain text",
-                "html": "<p>Newsletter body as HTML</p>"
-            }
-        }))
-        .send()
-        .await
-        .expect("Faild to execute request.");
-
-    //Assert
-    assert_eq!(401, response.status().as_u16());
-    assert_eq!(
-        r#"Basic realm="publish""#,
-        response.headers()["WWW-Authenticate"]
+    //Act - Part 4 - 리다이렉트를 따른다.
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
     );
+    //Mock은 뉴스레터 이메일을 한 번 보냈다는 드롭을 검증한다.
 }

@@ -12,3 +12,5 @@ pub mod authentication;
 pub mod session_state;
 //20250228 추가
 pub mod utils;
+//20250305 추가
+pub mod idempotency;

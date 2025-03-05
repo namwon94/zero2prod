@@ -106,30 +106,31 @@ impl TestApp {
             plain_text
         }
     }
-    //20250217 추가 -> 20250219 수정 (인증 관련된 내용 ) / 20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
-    pub async fn post_newsletters(
-        &self,
-        body: serde_json::Value
-    ) -> reqwest::Response {
+
+    pub async fn get_publish_newsletter(&self) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/newsletters", &self.address))
-            //무작위 크리덴셜 'reqwest'가 인코딩/포매팅 업무를 처리한다. -> 이제 무작위로 생성 안함 (test_user 매서드 생성)
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .json(&body)
+            .get(&format!("{}/admin/newsletters", &self.address))
             .send()
             .await
             .expect("Failed to execute request.")
     }
-    //20250219 추가 -> 20250220 삭제 TestUser 구조체 생성
-    /* 
-    pub async fn test_user(&self) -> (String, String) {
-        let row = sqlx::query!("SELECT username, password_hash FROM users LIMIT 1")
-            .fetch_one(&self.db_pool)
-            .await
-            .expect("Failed to create test users.");
-        (row.username, row.password_hash)
+
+    pub async fn get_publish_newsletter_html(&self) -> String {
+        self.get_publish_newsletter().await.text().await.unwrap()
     }
-    */
+
+    pub async fn post_publish_newsletter<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/admin/newsletters", &self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
     //20250225 추가 로그인 / 20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
     where
@@ -296,6 +297,14 @@ impl TestUser {
             username: Uuid::new_v4().to_string(),
             password: Uuid::new_v4().to_string()
         }
+    }
+
+    pub async fn login(&self, app: &TestApp) {
+        app.post_login(&serde_json::json!({
+            "username": &self.username,
+            "password": &self.password
+        }))
+        .await;
     }
 
     async fn store(&self, pool: &PgPool) {

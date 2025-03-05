@@ -1,18 +1,23 @@
 use crate::authentication::UserId;
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
-use crate::utils::{e500, see_other};
+use crate::utils::{e500, see_other, e400};
 use actix_web::web::ReqData;
 use actix_web::{web, HttpResponse};
 use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use sqlx::PgPool;
+//20250305 추가
+use crate::idempotency::{self, IdempotencyKey};
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
     title: String,
     text_content: String,
     html_content: String,
+    //20250305 추가 / 멱등성 키
+    idempotency_key: String
+
 }
 
 
@@ -27,6 +32,9 @@ pub async fn publish_newsletter(
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    //차용 검사기가 오류를 발생하지 않도록 폼을 제거해야 한다.
+    let FormData {title, text_content, html_content, idempotency_key} = form.0;
+    let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
     let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
     for subscriber in subscribers {
         match subscriber {
@@ -34,9 +42,9 @@ pub async fn publish_newsletter(
                 email_client
                     .send_email(
                         &subscriber.email,
-                        &form.title,
-                        &form.html_content,
-                        &form.text_content,
+                        &title,
+                        &html_content,
+                        &text_content,
                     )
                     .await
                     .with_context(|| {

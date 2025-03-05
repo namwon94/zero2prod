@@ -137,7 +137,7 @@ async fn run(
                     //20250226 추가 -> admin/dashboard 엔트리 포인트 추가
                     .route("/dashboard", web::get().to(admin_dashboard))
                     //새로운 핸들러를 등록한다.
-                    .route("/newsletters", web::post().to(publish_newsletter_form))
+                    .route("/newsletters", web::get().to(publish_newsletter_form))
                     .route("/newsletters", web::post().to(publish_newsletter))
                     //20250228 추가 -> admin/password 비밀번호 변경 폼 / get
                     .route("/password", web::get().to(change_password_form))
