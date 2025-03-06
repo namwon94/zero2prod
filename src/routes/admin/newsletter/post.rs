@@ -8,7 +8,10 @@ use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use sqlx::PgPool;
 //20250305 추가
-use crate::idempotency::{self, IdempotencyKey};
+use crate::idempotency::IdempotencyKey;
+//20250306 추가
+use crate::idempotency::get_saved_response;
+use crate::idempotency::save_response;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -28,13 +31,19 @@ pub struct FormData {
 )]
 pub async fn publish_newsletter(
     form: web::Form<FormData>,
+    //사용자 세션에서 추출한 사용자 id를 주입한다.
     user_id: ReqData<UserId>,
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    let user_id = user_id.into_inner();
     //차용 검사기가 오류를 발생하지 않도록 폼을 제거해야 한다.
     let FormData {title, text_content, html_content, idempotency_key} = form.0;
     let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
+    //데이터베이스에 저장된 응담이 있다면 일찍 반환한다.
+    if let Some(saved_response) = get_saved_response(&pool, &idempotency_key, *user_id).await.map_err(e500)? {
+        return Ok(saved_response);
+    }
     let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
     for subscriber in subscribers {
         match subscriber {
@@ -62,7 +71,9 @@ pub async fn publish_newsletter(
         }
     }
     FlashMessage::info("The newsletter issue has been published!").send();
-    Ok(see_other("/admin/newsletters"))
+    let response = see_other("/admin/newsletters");
+    let response = save_response(&pool, &idempotency_key, *user_id, response).await.map_err(e500)?;
+    Ok(response)
 }
 
 struct ConfirmedSubscriber {

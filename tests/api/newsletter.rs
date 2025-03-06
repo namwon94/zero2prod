@@ -142,12 +142,13 @@ async fn newsletter_creation_is_idempotent(){
         .await;
 
     //Act - Part 1 - 뉴스레터 폼을 제출한다.
+    let idempotency_key = uuid::Uuid::new_v4().to_string();
     let newsletter_request_body = serde_json::json!({
         "title": "Newsletter title",
         "text_content": "Newsletter body as plain text",
         "html_content": "<p>Newsletter body as HTML</p>",
         //헤더가 아니라 폼 데이터의 일부로서 멱등성 키를 기대한다.
-        "idempotexcy_key": uuid::Uuid::new_v4().to_string()
+        "idempotency_key": idempotency_key
     });
     let response = app.post_publish_newsletter(&newsletter_request_body).await;
     assert_is_redirect_to(&response, "/admin/newsletters");
@@ -155,9 +156,8 @@ async fn newsletter_creation_is_idempotent(){
     //Act - Part 2 - 리다이렉트를 따른다.
     let html_page = app.get_publish_newsletter_html().await;
     assert!(
-        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>"), "First request: {}", html_page
     );
-
     //Act - Part 3 - 뉴스레터 폼을 다시 제출한다.
     let response = app.post_publish_newsletter(&newsletter_request_body).await;
     assert_is_redirect_to(&response, "/admin/newsletters");
@@ -165,7 +165,7 @@ async fn newsletter_creation_is_idempotent(){
     //Act - Part 4 - 리다이렉트를 따른다.
     let html_page = app.get_publish_newsletter_html().await;
     assert!(
-        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>"), "Second request: {}", html_page
     );
     //Mock은 뉴스레터 이메일을 한 번 보냈다는 드롭을 검증한다.
 }

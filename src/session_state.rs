@@ -5,9 +5,14 @@ use std::future::{Ready, ready};
 use uuid::Uuid;
 
 pub struct TypedSession(Session);
-
+/*
+20250306 / 책과 다르게 flash_message를 세션에 저장을 한다. 
+    -> 그 이유는 flash_message를 저장 하기 전에는 newletters - newsletter_creation_is_idempotent cargo test 시 에러가 남(에러 메시지를 찾을 수 없다고)
+    -> 해당 오류는 flash_message가 리다이렉션 후에 사라지는 문제가 발생할 수 있는데 현재 내가 격고 있음 그러므로 세션에 메시지를 저장하는 로직 추가
+*/
 impl TypedSession {
     const USER_ID_KEY: &'static str = "user_id";
+    const FLASH_MESSAGE_KEY: &'static str = "flash_message";
 
     pub fn renew(&self) {
         self.0.renew()
@@ -23,6 +28,15 @@ impl TypedSession {
 
     pub fn log_out(self) {
         self.0.purge()
+    }
+
+    //flash_message 저장
+    pub fn insert_flash_message(&self, msg_html: String) -> Result<(), serde_json::Error> {
+        self.0.insert(Self::FLASH_MESSAGE_KEY, msg_html)
+    }
+
+    pub fn get_flash_message(&self) -> Result<Option<String>, serde_json::Error> {
+        self.0.get(Self::FLASH_MESSAGE_KEY)
     }
 }
 

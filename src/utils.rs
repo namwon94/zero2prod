@@ -1,7 +1,7 @@
 use actix_web::HttpResponse;
 use actix_web::http::header::LOCATION;
 //20250305 추가
-use actix_web::http::StatusCode;
+//use actix_web::http::StatusCode;
 
 //로깅을 위해 오류의 근본 원인은 유지한면서 불투명한 500을 반환한다.
 pub fn e500<T>(e: T) -> actix_web::Error

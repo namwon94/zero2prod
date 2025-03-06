@@ -121,15 +121,14 @@ impl TestApp {
 
     pub async fn post_publish_newsletter<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize,
-    {
+        Body: serde::Serialize, {
         self.api_client
             .post(&format!("{}/admin/newsletters", &self.address))
             .form(body)
             .send()
             .await
             .expect("Failed to execute request.")
-    }
+        }
 
     //20250225 추가 로그인 / 20250226 수정 -> spawn_app()에서 reqwest::Client 인스턴스 사용
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response

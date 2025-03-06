@@ -2,14 +2,25 @@ use actix_web::http::header::ContentType;
 use actix_web::HttpResponse;
 use actix_web_flash_messages::IncomingFlashMessages;
 use std::fmt::Write;
+//20250306 추가
+use crate::session_state::TypedSession;
 
+//20250306 msg_html TypedSession에 insert / get 추가
 pub async fn publish_newsletter_form(
     flash_messages: IncomingFlashMessages,
+    session: TypedSession
 ) -> Result<HttpResponse, actix_web::Error> {
     let mut msg_html = String::new();
     for m in flash_messages.iter() {
         writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
+    if !msg_html.is_empty() {
+        session.insert_flash_message(msg_html).expect("Failed to isnert_flash_message");    
+    }
+
+    let flash_message = session.get_flash_message().expect("Failed to get_flash_message");
+    let msg_html = flash_message.unwrap_or_default();
+
     let idempotency_key = uuid::Uuid::new_v4();
     Ok(HttpResponse::Ok()
         .content_type(ContentType::html())
