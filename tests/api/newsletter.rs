@@ -3,6 +3,8 @@ use wiremock::matchers::{any, method, path};
 use wiremock::{Mock, ResponseTemplate};
 //20250221 추가
 //use uuid::Uuid;
+//20250310 추가
+use std::time::Duration;
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
@@ -168,4 +170,39 @@ async fn newsletter_creation_is_idempotent(){
         html_page.contains("<p><i>The newsletter issue has been published!</i></p>"), "Second request: {}", html_page
     );
     //Mock은 뉴스레터 이메일을 한 번 보냈다는 드롭을 검증한다.
+}
+
+#[tokio::test]
+async fn concurrent_form_submission_is_handled_gracefully() {
+    //Arrange
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        // Setting a long delay to ensure that the second request
+        // arrives before the first one completes
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    //Act - 두 개의 뉴스레터 홈을 동시에 제출한다.
+    let idempotency_key = uuid::Uuid::new_v4().to_string();
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": idempotency_key
+    });
+
+    let response1 = app.post_publish_newsletter(&newsletter_request_body);
+    let response2 = app.post_publish_newsletter(&newsletter_request_body);
+    let (response1, response2) = tokio::join!(response1, response2);
+
+    assert_eq!(response1.status(), response2.status());
+    assert_eq!(response1.text().await.unwrap(), response2.text().await.unwrap());
+
+    //Mock은 드롭 시 이메일을 한 번만 보냈음을 검증한다.
 }
