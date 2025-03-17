@@ -18,6 +18,9 @@ use wiremock::MockServer;
 //use sha3::Digest;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher, Algorithm, Params, Version};
+//20250317 추가
+use zero2prod::email_client::EmailClient;
+use zero2prod::issue_delivery_worker::{try_execute_task, ExecutionOutcome};
 
 //'once_cell' 을 사용해서 'TRACING' 스택이 한 번만 초기화되는 것을 보장한다.
 static TRACING: Lazy<()> = Lazy::new(|| {
@@ -61,7 +64,9 @@ pub struct TestApp {
     //20250220 추가
     pub test_user: TestUser,
     //20250226 추가
-    pub api_client: reqwest::Client
+    pub api_client: reqwest::Client,
+    //20250317 추가
+    pub email_client: EmailClient
 }
 
 impl TestApp {
@@ -200,6 +205,15 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    //20250317 추가
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutcome::EmptyQueue = try_execute_task(&self.db_pool, &self.email_client).await.unwrap() {
+                break;
+            }
+        }
+    }
 }
 
 // .await를 호출하지 않으므로 비동기처리(async)가 아니여도 된다. -> 이제는 비동기 함수이다.(20250121)
@@ -261,7 +275,9 @@ pub async fn spawn_app() -> TestApp {
         //20250220 추가
         test_user: TestUser::generate(),
         //20250226 추가
-        api_client: client
+        api_client: client,
+        //20250317 추가
+        email_client: configuration.email_client.client()
     };
     test_app.test_user.store(&test_app.db_pool).await;
     test_app

@@ -1,9 +1,11 @@
 use crate::email_client::EmailClient;
 use crate::domain::SubscriberEmail;
 use sqlx::{PgPool, Postgres, Transaction};
-use tracing::{field::display, Span};
+//use tracing::{field::display, Span};
 use uuid::Uuid;
 use std::time::Duration;
+//20250317 추가
+use crate::{configuration::Settings, startup::get_connection_pool};
 
 struct NewsletterIssue {
     title: String,
@@ -30,7 +32,7 @@ async fn get_issue(
     Ok(issue)
 }
 
-enum ExecutionOutcome {
+pub enum ExecutionOutcome {
     TaskCompleted,
     EmptyQueue
 }
@@ -43,7 +45,7 @@ enum ExecutionOutcome {
     ),
     err
 )]
-async fn try_execute_task(
+pub async fn try_execute_task(
     pool: &PgPool,
     email_client: &EmailClient
 ) -> Result<ExecutionOutcome, anyhow::Error> {
@@ -145,4 +147,13 @@ async fn worker_loop(
             Ok(ExecutionOutcome::TaskCompleted) => {}
         }
     }
+}
+
+pub async fn run_worker_until_stopped(
+    configuration: Settings
+) -> Result<(), anyhow::Error> {
+    let connection_pool = get_connection_pool(&configuration.database);
+    //헬퍼 함수를 사용한다.
+    let email_client = configuration.email_client.client();
+    worker_loop(connection_pool, email_client).await
 }
